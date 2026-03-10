@@ -227,6 +227,73 @@ To enable OAuth 2.0 for the Entra custom authentication extension:
 5. Set `AzureAd__TenantId` and `AzureAd__ClientId` in the Function App's app settings
 6. In the **Custom authentication extension** configuration in Entra, point to this Function App's endpoint with the function key
 
+#### Testing OAuth 2.0 Token Validation
+
+Once `AzureAd__TenantId` and `AzureAd__ClientId` are configured, use these steps to verify token validation is working.
+
+**Prerequisites:**
+- An **API app registration** with an Application ID URI (e.g., `api://<client-id>`) and an **App role** (`ClaimsValidator.Call`, allowed for Applications)
+- A **test client app registration** with a client secret
+
+**Step 1 — Acquire a token:**
+
+```powershell
+$body = @{
+    client_id     = "<test-client-id>"
+    client_secret = "<test-client-secret>"
+    scope         = "api://<api-client-id>/.default"
+    grant_type    = "client_credentials"
+}
+
+$response = Invoke-RestMethod -Method Post `
+  -Uri "https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token" `
+  -ContentType "application/x-www-form-urlencoded" `
+  -Body $body
+
+$token = $response.access_token
+```
+
+**Step 2 — Verify with a test matrix:**
+
+| # | Request | Expected |
+|---|---------|----------|
+| 1 | Valid key + valid Bearer token | **200** — both layers pass |
+| 2 | Valid key + **invalid** Bearer token | **401** — proves token validation is active |
+| 3 | Valid key + no Bearer header | **200** — key-only fallback (by design) |
+
+```powershell
+# Test 1: Valid key + valid token → 200
+Invoke-RestMethod -Method Post `
+  -Uri "https://<app>.azurewebsites.net/api/CustomClaimMatching?code=<function-key>" `
+  -Headers @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" } `
+  -Body '<payload>'
+
+# Test 2: Valid key + invalid token → 401 (proves OAuth is working)
+Invoke-RestMethod -Method Post `
+  -Uri "https://<app>.azurewebsites.net/api/CustomClaimMatching?code=<function-key>" `
+  -Headers @{ Authorization = "Bearer invalid-token"; "Content-Type" = "application/json" } `
+  -Body '<payload>'
+
+# Test 3: Valid key + no token → 200 (key-only still works)
+Invoke-RestMethod -Method Post `
+  -Uri "https://<app>.azurewebsites.net/api/CustomClaimMatching?code=<function-key>" `
+  -Headers @{ "Content-Type" = "application/json" } `
+  -Body '<payload>'
+```
+
+> **Test #2 is the proof.** A `401` with a valid function key but an invalid Bearer token confirms the OAuth layer is active. The function key got past the Azure Functions host, but `TokenValidationService` rejected the bad token.
+
+**Step 3 — Verify in Application Insights logs:**
+
+```kusto
+traces
+| where message has "Bearer token"
+| order by timestamp desc
+| take 10
+```
+
+You should see `Bearer token validated successfully.` for valid tokens and `Bearer token validation failed: <reason>` for invalid ones.
+
 ## Claims Validation Providers
 
 The function uses a pluggable validation architecture (`IClaimsValidator`). The active provider is selected via the `ClaimsValidator:Provider` app setting.
