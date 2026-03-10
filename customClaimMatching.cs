@@ -35,8 +35,8 @@ public class CustomClaimMatching
             var (isValid, errorMessage) = await _tokenValidator.ValidateTokenAsync(token);
             if (!isValid)
             {
-                _logger.LogWarning("Bearer token validation failed.");
-                return new UnauthorizedResult();
+                _logger.LogWarning("Bearer token validation failed: {Error}", errorMessage);
+                return new ObjectResult(new { error = "Bearer token validation failed", detail = errorMessage }) { StatusCode = 401 };
             }
         }
         else if (_tokenValidator.IsEnabled)
