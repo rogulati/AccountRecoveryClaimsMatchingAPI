@@ -11,10 +11,14 @@ namespace account_recovery_claim_matching;
 public class CustomClaimMatching
 {
     private readonly ILogger<CustomClaimMatching> _logger;
+    private readonly IClaimsValidator _claimsValidator;
+    private readonly TokenValidationService _tokenValidator;
 
-    public CustomClaimMatching(ILogger<CustomClaimMatching> logger)
+    public CustomClaimMatching(ILogger<CustomClaimMatching> logger, IClaimsValidator claimsValidator, TokenValidationService tokenValidator)
     {
         _logger = logger;
+        _claimsValidator = claimsValidator;
+        _tokenValidator = tokenValidator;
     }
 
     [Function("CustomClaimMatching")]
@@ -22,6 +26,23 @@ public class CustomClaimMatching
         [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
     {
         _logger.LogInformation("C# HTTP trigger function processed a request.");
+
+        // Validate Bearer token when present (required for Entra custom auth extension calls)
+        var authHeader = req.Headers["Authorization"].FirstOrDefault();
+        if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            var token = authHeader.Substring("Bearer ".Length).Trim();
+            var (isValid, errorMessage) = await _tokenValidator.ValidateTokenAsync(token);
+            if (!isValid)
+            {
+                _logger.LogWarning("Bearer token validation failed.");
+                return new UnauthorizedResult();
+            }
+        }
+        else if (_tokenValidator.IsEnabled)
+        {
+            _logger.LogInformation("No Bearer token in request — proceeding with function key auth only.");
+        }
         
         string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
         var request = JsonConvert.DeserializeObject<VerifiedIdClaimValidationRequest>(requestBody);
@@ -36,45 +57,26 @@ public class CustomClaimMatching
         string? upn = request.Data.VerifiedIdClaimsContext.EntraAccount?.Upn;
         string? employeeId = request.Data.VerifiedIdClaimsContext.EntraAccount?.EmployeeId;
 
-        // Extract Verified Credential claims
-        var vcClaims = request.Data.VerifiedIdClaimsContext.Claims;
-        string? fullName = vcClaims?.FullName;
-        string? firstName = vcClaims?.FirstName;
-        string? lastName = vcClaims?.LastName;
-        string? dateOfBirth = vcClaims?.DateOfBirth;
-        string? documentType = vcClaims?.DocumentType;
-        string? documentId = vcClaims?.DocumentId;
-        string? documentExpiryDate = vcClaims?.DocumentExpiryDate;
-        string? photo = vcClaims?.Photo;
+        // Extract Verified Credential claims (dynamic — any key/value pairs the caller sends)
+        var claims = request.Data.VerifiedIdClaimsContext.Claims ?? new Dictionary<string, string>();
 
         // Extract authentication context
         string? correlationId = request.Data.AuthenticationContext?.CorrelationId;
         string? clientIp = request.Data.AuthenticationContext?.Client?.Ip;
         string? tenantId = request.Data.TenantId;
 
-        _logger.LogInformation("Processing claim validation for UPN: {Upn}, CorrelationId: {CorrelationId}", upn, correlationId);
+        _logger.LogInformation("Processing claim validation for UPN: {Upn}, CorrelationId: {CorrelationId}, ClaimCount: {Count}",
+            upn, correlationId, claims.Count);
 
-        // TODO: Call external HR API to validate claims against HR data
-        // Example: var hrValidationResult = await _hrApiClient.ValidateEmployeeClaimsAsync(
-        //     upn: upn,
-        //     employeeId: employeeId,
-        //     fullName: fullName,
-        //     firstName: firstName,
-        //     lastName: lastName,
-        //     dateOfBirth: dateOfBirth,
-        //     documentType: documentType,
-        //     documentId: documentId,
-        //     documentExpiryDate: documentExpiryDate,
-        //     photo: photo
-        // );
+        // Validate claims against authoritative data source
+        var matchResult = await _claimsValidator.ValidateClaimsAsync(
+            upn: upn,
+            employeeId: employeeId,
+            claims: claims
+        );
 
-        // Mock validation result - replace with actual HR API call result
-        string validationResult = "pass";
-        List<string>? failedClaims = null;
-
-        // Example of a failed validation:
-        // validationResult = "fail";
-        // failedClaims = new List<string> { "dateOfBirth", "documentExpiryDate" };
+        string validationResult = matchResult.Result;
+        List<string>? failedClaims = matchResult.FailedClaims;
 
         // Build response
         var response = new VerifiedIdClaimValidationResponse(validationResult, failedClaims);
@@ -118,7 +120,7 @@ public class VerifiedIdClaimsContext
     public EntraAccount? EntraAccount { get; set; }
 
     [JsonProperty("claims")]
-    public VcClaims? Claims { get; set; }
+    public Dictionary<string, string>? Claims { get; set; }
 }
 
 public class EntraAccount
@@ -128,33 +130,6 @@ public class EntraAccount
 
     [JsonProperty("employeeId")]
     public string? EmployeeId { get; set; }
-}
-
-public class VcClaims
-{
-    [JsonProperty("fullName")]
-    public string? FullName { get; set; }
-
-    [JsonProperty("firstName")]
-    public string? FirstName { get; set; }
-
-    [JsonProperty("lastName")]
-    public string? LastName { get; set; }
-
-    [JsonProperty("dateOfBirth")]
-    public string? DateOfBirth { get; set; }
-
-    [JsonProperty("documentType")]
-    public string? DocumentType { get; set; }
-
-    [JsonProperty("documentId")]
-    public string? DocumentId { get; set; }
-
-    [JsonProperty("documentExpiryDate")]
-    public string? DocumentExpiryDate { get; set; }
-
-    [JsonProperty("photo")]
-    public string? Photo { get; set; }
 }
 
 public class AuthenticationContext
