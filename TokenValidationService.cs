@@ -42,7 +42,7 @@ public class TokenValidationService
 
         _validationParameters = new TokenValidationParameters
         {
-            ValidAudience = clientId,
+            ValidAudiences = new[] { clientId, $"api://{clientId}" },
             ValidIssuers = new[]
             {
                 $"https://login.microsoftonline.com/{tenantId}/v2.0",
