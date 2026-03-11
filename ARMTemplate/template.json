@@ -176,10 +176,6 @@
               "value": "dotnet-isolated"
             },
             {
-              "name": "WEBSITE_RUN_FROM_PACKAGE",
-              "value": "1"
-            },
-            {
               "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
               "value": "[reference(resourceId('Microsoft.Insights/components', variables('applicationInsightsName')), '2020-02-02').InstrumentationKey]"
             },
@@ -190,6 +186,10 @@
             {
               "name": "SCM_COMMAND_IDLE_TIMEOUT",
               "value": "600"
+            },
+            {
+              "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
+              "value": "true"
             },
             {
               "name": "Excel__ShareUrl",
