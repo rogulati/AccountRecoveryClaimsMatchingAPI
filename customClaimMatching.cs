@@ -53,16 +53,16 @@ public class CustomClaimMatching
             return new BadRequestObjectResult("Invalid request payload");
         }
 
-        // Extract Entra Account information
-        string? upn = request.Data.VerifiedIdClaimsContext.EntraAccount?.Upn;
-        string? employeeId = request.Data.VerifiedIdClaimsContext.EntraAccount?.EmployeeId;
+        // Extract user information from authentication context
+        string? upn = request.Data.AuthenticationContext?.User?.UserPrincipalName;
+        string? employeeId = request.Data.VerifiedIdClaimsContext.AdditionalInfo?.EmployeeId;
 
         // Extract Verified Credential claims (dynamic — any key/value pairs the caller sends)
         var claims = request.Data.VerifiedIdClaimsContext.Claims ?? new Dictionary<string, string>();
 
         // Extract authentication context
         string? correlationId = request.Data.AuthenticationContext?.CorrelationId;
-        string? clientIp = request.Data.AuthenticationContext?.Client?.Ip;
+        string? clientIp = request.Data.AuthenticationContext?.Client?.ClientIp;
         string? tenantId = request.Data.TenantId;
 
         _logger.LogInformation("Processing claim validation for UPN: {Upn}, CorrelationId: {CorrelationId}, ClaimCount: {Count}",
@@ -107,6 +107,12 @@ public class VerifiedIdClaimValidationData
     [JsonProperty("tenantId")]
     public string? TenantId { get; set; }
 
+    [JsonProperty("authenticationEventListenerId")]
+    public string? AuthenticationEventListenerId { get; set; }
+
+    [JsonProperty("customAuthenticationExtensionId")]
+    public string? CustomAuthenticationExtensionId { get; set; }
+
     [JsonProperty("verifiedIdClaimsContext")]
     public VerifiedIdClaimsContext? VerifiedIdClaimsContext { get; set; }
 
@@ -116,18 +122,30 @@ public class VerifiedIdClaimValidationData
 
 public class VerifiedIdClaimsContext
 {
-    [JsonProperty("entraAccount")]
-    public EntraAccount? EntraAccount { get; set; }
+    [JsonProperty("identities")]
+    public List<IdentityInfo>? Identities { get; set; }
+
+    [JsonProperty("additionalInfo")]
+    public AdditionalInfo? AdditionalInfo { get; set; }
 
     [JsonProperty("claims")]
     public Dictionary<string, string>? Claims { get; set; }
 }
 
-public class EntraAccount
+public class IdentityInfo
 {
-    [JsonProperty("upn")]
-    public string? Upn { get; set; }
+    [JsonProperty("issuer")]
+    public string? Issuer { get; set; }
 
+    [JsonProperty("issuerAssignedId")]
+    public string? IssuerAssignedId { get; set; }
+
+    [JsonProperty("signInType")]
+    public string? SignInType { get; set; }
+}
+
+public class AdditionalInfo
+{
     [JsonProperty("employeeId")]
     public string? EmployeeId { get; set; }
 }
@@ -137,14 +155,71 @@ public class AuthenticationContext
     [JsonProperty("correlationId")]
     public string? CorrelationId { get; set; }
 
+    [JsonProperty("protocol")]
+    public string? Protocol { get; set; }
+
     [JsonProperty("client")]
     public ClientInfo? Client { get; set; }
+
+    [JsonProperty("clientServicePrincipal")]
+    public ServicePrincipalInfo? ClientServicePrincipal { get; set; }
+
+    [JsonProperty("resourceServicePrincipal")]
+    public ServicePrincipalInfo? ResourceServicePrincipal { get; set; }
+
+    [JsonProperty("user")]
+    public UserInfo? User { get; set; }
 }
 
 public class ClientInfo
 {
-    [JsonProperty("ip")]
-    public string? Ip { get; set; }
+    [JsonProperty("clientIp")]
+    public string? ClientIp { get; set; }
+
+    [JsonProperty("locale")]
+    public string? Locale { get; set; }
+
+    [JsonProperty("market")]
+    public string? Market { get; set; }
+}
+
+public class ServicePrincipalInfo
+{
+    [JsonProperty("appId")]
+    public string? AppId { get; set; }
+
+    [JsonProperty("displayName")]
+    public string? DisplayName { get; set; }
+
+    [JsonProperty("id")]
+    public string? Id { get; set; }
+}
+
+public class UserInfo
+{
+    [JsonProperty("id")]
+    public string? Id { get; set; }
+
+    [JsonProperty("userPrincipalName")]
+    public string? UserPrincipalName { get; set; }
+
+    [JsonProperty("givenName")]
+    public string? GivenName { get; set; }
+
+    [JsonProperty("surname")]
+    public string? Surname { get; set; }
+
+    [JsonProperty("mail")]
+    public string? Mail { get; set; }
+
+    [JsonProperty("onPremisesSamAccountName")]
+    public string? OnPremisesSamAccountName { get; set; }
+
+    [JsonProperty("userType")]
+    public string? UserType { get; set; }
+
+    [JsonProperty("createdDateTime")]
+    public string? CreatedDateTime { get; set; }
 }
 
 #endregion

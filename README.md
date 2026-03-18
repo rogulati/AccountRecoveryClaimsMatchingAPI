@@ -35,32 +35,58 @@ The function expects a POST request with the following payload:
 
 ```json
 {
-    "type": "microsoft.graph.authenticationEvent.OnVerifiedIdClaimValidation",
+    "type": "microsoft.graph.authenticationEvent.verifiedIdClaimValidation",
     "source": "/tenants/<tenant-guid>/applications/<app-id>",
     "data": {
-        "@odata.type": "microsoft.graph.onVerifiedIdClaimValidation",
+        "@odata.type": "microsoft.graph.onVerifiedIdClaimValidationCalloutData",
         "tenantId": "<tenant-guid>",
+        "authenticationEventListenerId": "<listener-guid>",
+        "customAuthenticationExtensionId": "<extension-guid>",
+        "authenticationContext": {
+            "correlationId": "<guid>",
+            "protocol": "OAUTH2",
+            "client": {
+                "clientIp": "127.0.0.1",
+                "locale": "en-us",
+                "market": "en-us"
+            },
+            "clientServicePrincipal": {
+                "appId": "<app-id>",
+                "displayName": "My App",
+                "id": "<sp-guid>"
+            },
+            "resourceServicePrincipal": null,
+            "user": {
+                "id": "<user-guid>",
+                "userPrincipalName": "user@contoso.com",
+                "givenName": "John",
+                "surname": "Doe",
+                "mail": "user@contoso.com",
+                "onPremisesSamAccountName": "jdoe",
+                "userType": "Member",
+                "createdDateTime": "2024-01-01T00:00:00"
+            }
+        },
         "verifiedIdClaimsContext": {
-            "entraAccount": {
-                "upn": "user@contoso.com",
+            "identities": [
+                {
+                    "issuer": "contoso.com",
+                    "issuerAssignedId": "user@contoso.com",
+                    "signInType": "userPrincipalName"
+                }
+            ],
+            "additionalInfo": {
                 "employeeId": "12345678"
             },
             "claims": {
-                "fullName": "John Doe",
                 "firstName": "John",
                 "lastName": "Doe",
+                "fullName": "John Doe",
                 "dateOfBirth": "1990-01-15",
                 "documentType": "Passport",
                 "documentId": "AB123456",
-                "documentExpiryDate": "2028-01-15",
-                "homeAddress": "123 Main St, Redmond, WA",
-                "mobileNo": "+1-555-0100"
-            }
-        },
-        "authenticationContext": {
-            "correlationId": "<guid>",
-            "client": {
-                "ip": "192.168.1.1"
+                "homeAddress": "123 Main St",
+                "documentExpiryDate": "2028-01-15"
             }
         }
     }
@@ -73,9 +99,10 @@ The `claims` object is **dynamic** — you can include any set of key/value pair
 
 | Field | Source | Description |
 |-------|--------|-------------|
-| `upn` | Entra ID | User's principal name (used for employee lookup) |
-| `employeeId` | Entra ID | Employee identifier (used for employee lookup, optional) |
-| `claims.*` | Verified ID | Any key/value pairs — the function compares each key against the matching column in the data source |
+| `authenticationContext.user.userPrincipalName` | Entra ID | User's principal name (used for employee lookup) |
+| `verifiedIdClaimsContext.additionalInfo.employeeId` | Entra ID | Employee identifier (used for employee lookup, optional) |
+| `verifiedIdClaimsContext.identities` | Entra ID | Array of identity records (issuer, issuerAssignedId, signInType) |
+| `verifiedIdClaimsContext.claims.*` | Verified ID | Any key/value pairs — the function compares each key against the matching column in the data source |
 
 **Common claims** (add or remove as needed):
 
