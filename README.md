@@ -103,8 +103,7 @@ The `claims` object is **dynamic** — you can include any set of key/value pair
         "@odata.type": "microsoft.graph.onVerifiedIdClaimValidationResponseData",
         "actions": [
             {
-                "@odata.type": "microsoft.graph.verifiedIdClaimsMatchingResult",
-                "result": "pass"
+                "@odata.type": "microsoft.graph.verifiedIdClaimValidation.pass"
             }
         ]
     }
@@ -119,8 +118,7 @@ The `claims` object is **dynamic** — you can include any set of key/value pair
         "@odata.type": "microsoft.graph.onVerifiedIdClaimValidationResponseData",
         "actions": [
             {
-                "@odata.type": "microsoft.graph.verifiedIdClaimsMatchingResult",
-                "result": "fail",
+                "@odata.type": "microsoft.graph.verifiedIdClaimValidation.failed",
                 "failedClaims": ["dateOfBirth", "documentExpiryDate"]
             }
         ]

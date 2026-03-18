@@ -182,10 +182,7 @@ public class VerifiedIdClaimValidationResponseData
 public class VerifiedIdClaimsMatchingResultAction
 {
     [JsonPropertyName("@odata.type")]
-    public string ODataType { get; set; } = "microsoft.graph.verifiedIdClaimsMatchingResult";
-
-    [JsonPropertyName("result")]
-    public string Result { get; set; }
+    public string ODataType { get; set; }
 
     [JsonPropertyName("failedClaims")]
     [System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -193,7 +190,9 @@ public class VerifiedIdClaimsMatchingResultAction
 
     public VerifiedIdClaimsMatchingResultAction(string result, List<string>? failedClaims = null)
     {
-        Result = result;
+        ODataType = string.Equals(result, "pass", StringComparison.OrdinalIgnoreCase)
+            ? "microsoft.graph.verifiedIdClaimValidation.pass"
+            : "microsoft.graph.verifiedIdClaimValidation.failed";
         FailedClaims = failedClaims;
     }
 }
