@@ -77,6 +77,50 @@
       "metadata": {
         "description": "Entra ID application (client) ID of the Function App's app registration for OAuth 2.0. Leave empty to disable."
       }
+    },
+    "claimsValidatorProvider": {
+      "type": "string",
+      "defaultValue": "excel",
+      "allowedValues": [
+        "excel",
+        "hrapi"
+      ],
+      "metadata": {
+        "description": "Claims validation provider. Use 'excel' for testing with an Excel file, or 'hrapi' for production with an HR REST API."
+      }
+    },
+    "hrApiBaseUrl": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Base URL of your HR REST API (for example, https://hr.contoso.com/api). Required only when using the hrapi provider."
+      }
+    },
+    "hrApiAuthMode": {
+      "type": "string",
+      "defaultValue": "",
+      "allowedValues": [
+        "",
+        "apikey",
+        "oauth"
+      ],
+      "metadata": {
+        "description": "Authentication mode for the HR API: 'apikey' or 'oauth'. Leave empty when using the excel provider."
+      }
+    },
+    "hrApiApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "API key for the HR API (required when hrApiAuthMode is 'apikey'). Leave empty otherwise."
+      }
+    },
+    "hrApiOAuthScope": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "OAuth scope for the HR API (for example, api://hr-api-app-id/.default). Required when hrApiAuthMode is 'oauth'."
+      }
     }
   },
   "variables": {
@@ -210,6 +254,26 @@
             {
               "name": "EntraId__ClientId",
               "value": "[parameters('entraIdClientId')]"
+            },
+            {
+              "name": "ClaimsValidator__Provider",
+              "value": "[parameters('claimsValidatorProvider')]"
+            },
+            {
+              "name": "HrApi__BaseUrl",
+              "value": "[parameters('hrApiBaseUrl')]"
+            },
+            {
+              "name": "HrApi__AuthMode",
+              "value": "[parameters('hrApiAuthMode')]"
+            },
+            {
+              "name": "HrApi__ApiKey",
+              "value": "[parameters('hrApiApiKey')]"
+            },
+            {
+              "name": "HrApi__OAuthScope",
+              "value": "[parameters('hrApiOAuthScope')]"
             }
           ]
         }
