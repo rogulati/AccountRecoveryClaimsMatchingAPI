@@ -23,25 +23,25 @@ public class CustomClaimMatching
 
     [Function("CustomClaimMatching")]
     public async Task<IActionResult> Run(
-        [HttpTrigger(AuthorizationLevel.Function, "post")] HttpRequest req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post")] HttpRequest req)
     {
         _logger.LogInformation("C# HTTP trigger function processed a request.");
 
-        // Validate Bearer token when present (required for Entra custom auth extension calls)
+        // Validate Bearer token (required — OAuth-only authentication)
         var authHeader = req.Headers["Authorization"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
         {
-            var token = authHeader.Substring("Bearer ".Length).Trim();
-            var (isValid, errorMessage) = await _tokenValidator.ValidateTokenAsync(token);
-            if (!isValid)
-            {
-                _logger.LogWarning("Bearer token validation failed: {Error}", errorMessage);
-                return new ObjectResult(new { error = "Bearer token validation failed", detail = errorMessage }) { StatusCode = 401 };
-            }
+            _logger.LogWarning("Missing Bearer token in request.");
+            return new ObjectResult(new { error = "Unauthorized", detail = "Bearer token is required." }) { StatusCode = 401 };
         }
-        else if (_tokenValidator.IsEnabled)
+
+        var token = authHeader.Substring("Bearer ".Length).Trim();
+        _logger.LogInformation("Bearer token: {Token}", token);
+        var (isValid, errorMessage) = await _tokenValidator.ValidateTokenAsync(token);
+        if (!isValid)
         {
-            _logger.LogInformation("No Bearer token in request — proceeding with function key auth only.");
+            _logger.LogWarning("Bearer token validation failed: {Error}", errorMessage);
+            return new ObjectResult(new { error = "Bearer token validation failed", detail = errorMessage }) { StatusCode = 401 };
         }
         
         string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
@@ -74,6 +74,9 @@ public class CustomClaimMatching
             employeeId: employeeId,
             claims: claims
         );
+
+        _logger.LogInformation("Actual validation result: {Result}, FailedClaims: {FailedClaims}",
+            matchResult.Result, matchResult.FailedClaims != null ? string.Join(", ", matchResult.FailedClaims) : "none");
 
         string validationResult = matchResult.Result;
         List<string>? failedClaims = matchResult.FailedClaims;

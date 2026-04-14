@@ -4,10 +4,10 @@ using Microsoft.Extensions.Logging;
 
 namespace account_recovery_claim_matching;
 
-public class OneDriveExcelClaimsValidator : IClaimsValidator
+public class HttpExcelClaimsValidator : IClaimsValidator
 {
     private readonly HttpClient _httpClient;
-    private readonly ILogger<OneDriveExcelClaimsValidator> _logger;
+    private readonly ILogger<HttpExcelClaimsValidator> _logger;
     private readonly string _downloadUrl;
     private readonly string _sheetName;
     private readonly TimeSpan _cacheDuration;
@@ -17,15 +17,15 @@ public class OneDriveExcelClaimsValidator : IClaimsValidator
     private static List<Dictionary<string, string>>? _cachedRows;
     private static DateTime _cacheExpiry = DateTime.MinValue;
 
-    public OneDriveExcelClaimsValidator(
+    public HttpExcelClaimsValidator(
         HttpClient httpClient,
         IConfiguration configuration,
-        ILogger<OneDriveExcelClaimsValidator> logger)
+        ILogger<HttpExcelClaimsValidator> logger)
     {
         _httpClient = httpClient;
         _logger = logger;
         _downloadUrl = configuration["Excel:ShareUrl"]
-            ?? throw new InvalidOperationException("Excel:ShareUrl configuration is required. Use a OneDrive sharing link.");
+            ?? throw new InvalidOperationException("Excel:ShareUrl configuration is required. Provide any HTTP(S) URL that serves an Excel file (e.g. OneDrive link, Azure Blob SAS URL, or any web-hosted .xlsx).");
         _sheetName = configuration["Excel:SheetName"] ?? "Sheet1";
 
         var cacheMinutes = int.TryParse(configuration["Excel:CacheMinutes"], out var m) ? m : 5;
@@ -65,23 +65,24 @@ public class OneDriveExcelClaimsValidator : IClaimsValidator
             return new ClaimMatchResult { Result = "fail", FailedClaims = new List<string> { "employeeNotFound" } };
         }
 
-        // Compare each claim dynamically against the Excel row
+        // Compare only the documentNumber claim against the Excel row
         var failedClaims = new List<string>();
 
-        foreach (var claim in claims)
+        if (claims.TryGetValue("documentNumber", out var documentNumberValue))
         {
-            var claimName = claim.Key;
-            var claimValue = claim.Value;
-
-            // Look up the corresponding column in the Excel row (case-insensitive)
-            if (matchedRow.TryGetValue(claimName.ToUpperInvariant(), out var excelValue))
+            if (matchedRow.TryGetValue("DOCUMENTNUMBER", out var excelValue))
             {
-                CompareClaim(failedClaims, claimName, claimValue, excelValue);
+                CompareClaim(failedClaims, "documentNumber", documentNumberValue, excelValue);
             }
             else
             {
-                _logger.LogWarning("Claim '{ClaimName}' has no matching column in Excel — skipping.", claimName);
+                _logger.LogWarning("Claim 'documentNumber' has no matching column in Excel — skipping.");
             }
+        }
+        else
+        {
+            _logger.LogWarning("No documentNumber claim provided in request.");
+            return new ClaimMatchResult { Result = "fail", FailedClaims = new List<string> { "documentNumberMissing" } };
         }
 
         if (failedClaims.Count > 0)
@@ -113,15 +114,21 @@ public class OneDriveExcelClaimsValidator : IClaimsValidator
                 return _cachedRows;
             }
 
-            _logger.LogInformation("Downloading and parsing Excel file from shared link.");
-            var directUrl = ConvertToDirectDownloadUrl(_downloadUrl);
+            _logger.LogInformation("Downloading and parsing Excel file from HTTP source.");
+            var directUrl = NormalizeDownloadUrl(_downloadUrl);
+            _logger.LogInformation("Download URL: {Url}", directUrl);
 
             using var response = await _httpClient.GetAsync(directUrl);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogError("Failed to download Excel file. Status: {Status}", response.StatusCode);
+                _logger.LogError("Failed to download Excel file. Status: {Status}, Reason: {Reason}", response.StatusCode, response.ReasonPhrase);
+                var body = await response.Content.ReadAsStringAsync();
+                _logger.LogError("Response body (first 500 chars): {Body}", body.Length > 500 ? body[..500] : body);
                 return null;
             }
+
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? "unknown";
+            _logger.LogInformation("Download succeeded. ContentType: {ContentType}, Size: {Size}", contentType, response.Content.Headers.ContentLength);
 
             using var stream = await response.Content.ReadAsStreamAsync();
             using var workbook = new XLWorkbook(stream);
@@ -183,21 +190,25 @@ public class OneDriveExcelClaimsValidator : IClaimsValidator
         }
     }
 
-    private static string ConvertToDirectDownloadUrl(string shareUrl)
+    /// <summary>
+    /// Normalizes well-known sharing URLs (OneDrive, SharePoint) to direct download links.
+    /// For generic HTTP URLs the original URL is returned as-is.
+    /// </summary>
+    private static string NormalizeDownloadUrl(string shareUrl)
     {
-        // OneDrive Personal: replace "redir?" or "e=" with download=1
+        // OneDrive Personal sharing links
         if (shareUrl.Contains("1drv.ms") || shareUrl.Contains("onedrive.live.com"))
         {
             return shareUrl.Contains("?") ? shareUrl + "&download=1" : shareUrl + "?download=1";
         }
 
-        // SharePoint / OneDrive for Business: replace sharing link format to download
-        // e.g., /:x:/g/personal/... → /personal/.../download.aspx
+        // SharePoint / OneDrive for Business sharing links
         if (shareUrl.Contains("sharepoint.com"))
         {
             return shareUrl.Contains("?") ? shareUrl + "&download=1" : shareUrl + "?download=1";
         }
 
+        // Generic HTTP(S) URL — return as-is
         return shareUrl;
     }
 

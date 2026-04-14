@@ -4,6 +4,9 @@
 # Azure Functions localsettings file
 local.settings.json
 
+# Saved app settings (contains secrets)
+saved-appsettings.json
+
 # User-specific files
 *.suo
 *.user

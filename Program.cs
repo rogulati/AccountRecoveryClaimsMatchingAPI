@@ -19,14 +19,14 @@ builder.Services.AddSingleton<TokenValidationService>();
 
 // Register the claims validator based on configuration.
 // Set "ClaimsValidator:Provider" to "hrapi" for production HR API integration,
-// or "excel" (default) for OneDrive Excel testing.
+// or "excel" (default) for HTTP-hosted Excel file validation.
 var provider = builder.Configuration["ClaimsValidator:Provider"] ?? "excel";
 
 if (string.Equals(provider, "excel", StringComparison.OrdinalIgnoreCase))
 {
-    // Excel validator — downloads file from a public OneDrive sharing link (no auth)
-    builder.Services.AddHttpClient<OneDriveExcelClaimsValidator>();
-    builder.Services.AddSingleton<IClaimsValidator, OneDriveExcelClaimsValidator>();
+    // Excel validator — downloads .xlsx from any HTTP(S) URL (OneDrive, Azure Blob, custom host, etc.)
+    builder.Services.AddHttpClient<HttpExcelClaimsValidator>();
+    builder.Services.AddSingleton<IClaimsValidator, HttpExcelClaimsValidator>();
 }
 else
 {

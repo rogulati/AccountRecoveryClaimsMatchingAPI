@@ -233,82 +233,52 @@ When the function is registered as an **Entra ID custom authentication extension
 
 #### Authentication Behavior Summary
 
-| Scenario | Function Key | Bearer Token | Result |
-|----------|:---:|:---:|--------|
-| Testing (AzureAd not configured) | ✅ | — | Allowed |
-| Testing (AzureAd not configured) | ❌ | — | 401 (host rejects) |
-| Production (AzureAd configured) | ✅ | ✅ valid | Allowed |
-| Production (AzureAd configured) | ✅ | ❌ invalid | 401 |
-| Production (AzureAd configured) | ✅ | — (absent) | Allowed (key-only testing still works) |
+The function uses `AuthorizationLevel.Anonymous` — there are no function keys. All authentication is via OAuth 2.0 Bearer tokens validated by `TokenValidationService`.
+
+| Scenario | Bearer Token | Result |
+|----------|:---:|--------|
+| AzureAd not configured | — | Allowed (validation disabled — local dev only) |
+| AzureAd configured | ✅ valid | Allowed |
+| AzureAd configured | ❌ invalid | 401 |
+| AzureAd configured | — (absent) | 401 |
+
+#### App Registrations
+
+Two app registrations are involved in the OAuth 2.0 client credentials flow:
+
+| Role | App ID | Purpose |
+|------|--------|---------|
+| **API app** (Function App identity) | `5528a4be-4453-44f1-82f6-2ce4130cac1b` | Configured as `AzureAd__ClientId`. Tokens must have this app as the `aud` (audience) claim to be accepted. |
+| **Production client** (Entra custom auth extension) | `99045fe1-7639-4a75-9d4a-577b6ca3810f` | Microsoft's built-in app ID. In production, Entra's custom authentication extension infrastructure acquires a token using this identity automatically — no setup needed. Validated via the `azp` claim. |
+| **Test client** (manual testing, e.g. Insomnia) | `8144934d-9b73-4f0b-a7ac-e3958c811bac` | Optional. Used to manually acquire tokens via `client_credentials` to simulate what Entra does. Only needed for testing outside the Entra flow. |
+
+To allow the test client, add its app ID to `AzureAd:AuthorizedClientAppIds` (semicolon-separated):
+```
+AzureAd__AuthorizedClientAppIds=99045fe1-7639-4a75-9d4a-577b6ca3810f;8144934d-9b73-4f0b-a7ac-e3958c811bac
+```
 
 #### Setting Up the App Registration
 
-To enable OAuth 2.0 for the Entra custom authentication extension:
+To enable OAuth 2.0 for the Entra custom authentication extension (see [Learn doc](https://learn.microsoft.com/en-us/entra/identity-platform/custom-extension-tokenissuancestart-configuration?tabs=azure-portal%2Cworkforce-tenant)):
 
-1. **Register an application** in Entra ID → App registrations → New registration
-2. Set the **Application ID URI** (e.g., `api://<client-id>`)
-3. Under **Expose an API**, add a scope or use the default `/.default`
-4. Copy the **Application (client) ID** and your **Tenant ID**
-5. Set `AzureAd__TenantId` and `AzureAd__ClientId` in the Function App's app settings
-6. In the **Custom authentication extension** configuration in Entra, point to this Function App's endpoint with the function key
+1. **Register the custom authentication extension** in Entra ID → Enterprise applications → Custom authentication extensions
+2. Select the **TokenIssuanceStart** event type
+3. Set the **Target URL** to your Azure Function endpoint
+4. Under **API Authentication**, create a new app registration (this becomes the API app / audience)
+5. **Grant admin consent** for the `Receive custom authentication extension HTTP requests` permission
+6. Set `AzureAd__TenantId` and `AzureAd__ClientId` (the API app's client ID) in the Function App's app settings
 
-#### Testing OAuth 2.0 Token Validation
+#### Verifying the Custom Authentication Extension Flow
 
-Once `AzureAd__TenantId` and `AzureAd__ClientId` are configured, use these steps to verify token validation is working.
+The Entra ID custom authentication extension always authenticates to your Azure Function using the OAuth 2.0 `client_credentials` flow. The well-known Microsoft app ID `99045fe1-7639-4a75-9d4a-577b6ca3810f` is the authorized caller (configured via `AzureAd:AuthorizedClientAppIds`).
 
-**Prerequisites:**
-- An **API app registration** with an Application ID URI (e.g., `api://<client-id>`) and an **App role** (`ClaimsValidator.Call`, allowed for Applications)
-- A **test client app registration** with a client secret
+Once `AzureAd__TenantId` and `AzureAd__ClientId` are configured, you can verify end-to-end by triggering the sign-in flow that invokes the custom authentication extension (see [Step 5 in the Learn doc](https://learn.microsoft.com/en-us/entra/identity-platform/custom-extension-tokenissuancestart-configuration?tabs=azure-portal%2Cworkforce-tenant#step-5-test-the-application)):
 
-**Step 1 — Acquire a token:**
-
-```powershell
-$body = @{
-    client_id     = "<test-client-id>"
-    client_secret = "<test-client-secret>"
-    scope         = "api://<api-client-id>/.default"
-    grant_type    = "client_credentials"
-}
-
-$response = Invoke-RestMethod -Method Post `
-  -Uri "https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token" `
-  -ContentType "application/x-www-form-urlencoded" `
-  -Body $body
-
-$token = $response.access_token
+```
+https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize?client_id={App_to_enrich_ID}&response_type=id_token&redirect_uri=https://jwt.ms&scope=openid&state=12345&nonce=12345
 ```
 
-**Step 2 — Verify with a test matrix:**
-
-| # | Request | Expected |
-|---|---------|----------|
-| 1 | Valid key + valid Bearer token | **200** — both layers pass |
-| 2 | Valid key + **invalid** Bearer token | **401** — proves token validation is active |
-| 3 | Valid key + no Bearer header | **200** — key-only fallback (by design) |
-
-```powershell
-# Test 1: Valid key + valid token → 200
-Invoke-RestMethod -Method Post `
-  -Uri "https://<app>.azurewebsites.net/api/CustomClaimMatching?code=<function-key>" `
-  -Headers @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" } `
-  -Body '<payload>'
-
-# Test 2: Valid key + invalid token → 401 (proves OAuth is working)
-Invoke-RestMethod -Method Post `
-  -Uri "https://<app>.azurewebsites.net/api/CustomClaimMatching?code=<function-key>" `
-  -Headers @{ Authorization = "Bearer invalid-token"; "Content-Type" = "application/json" } `
-  -Body '<payload>'
-
-# Test 3: Valid key + no token → 200 (key-only still works)
-Invoke-RestMethod -Method Post `
-  -Uri "https://<app>.azurewebsites.net/api/CustomClaimMatching?code=<function-key>" `
-  -Headers @{ "Content-Type" = "application/json" } `
-  -Body '<payload>'
-```
-
-> **Test #2 is the proof.** A `401` with a valid function key but an invalid Bearer token confirms the OAuth layer is active. The function key got past the Azure Functions host, but `TokenValidationService` rejected the bad token.
-
-**Step 3 — Verify in Application Insights logs:**
+**Verify in Application Insights logs:**
 
 ```kusto
 traces
@@ -317,7 +287,7 @@ traces
 | take 10
 ```
 
-You should see `Bearer token validated successfully.` for valid tokens and `Bearer token validation failed: <reason>` for invalid ones.
+You should see `Bearer token validated successfully. azp=99045fe1-7639-4a75-9d4a-577b6ca3810f` for successful calls from the custom authentication extension.
 
 ## Claims Validation Providers
 
@@ -325,7 +295,7 @@ The function uses a pluggable validation architecture (`IClaimsValidator`). The 
 
 | Value | Provider | Description |
 |-------|----------|-------------|
-| `excel` | **OneDrive Excel** (default) | Downloads an Excel file from a public OneDrive sharing link. No authentication required. Use this for testing. |
+| `excel` | **HTTP Excel** (default) | Downloads an Excel file from any HTTP(S) URL — OneDrive sharing links, Azure Blob Storage, or any web-hosted `.xlsx`. Use this for testing. |
 | `hrapi` | **HR API** | Calls an external HR REST API to validate claims. Use this in production. |
 
 Set the provider in `local.settings.json`:
