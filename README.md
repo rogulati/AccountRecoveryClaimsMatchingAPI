@@ -176,11 +176,14 @@ You will be prompted for the following parameters:
 | **Branch** | Repository branch to deploy from (defaults to `main`) |
 | **Storage Account Type** | Storage SKU — `Standard_LRS`, `Standard_GRS`, or `Standard_RAGRS` |
 | **Location** | Azure region (defaults to the resource group's location) |
-| **Excel Share URL** | *(optional)* Public OneDrive sharing link to the Excel file |
+| **Excel Share URL** | *(optional)* Direct download URL for the Excel file (Azure Blob Storage, SharePoint, or any web-hosted .xlsx) |
 | **Excel Sheet Name** | *(optional)* Worksheet name (defaults to `Sheet1`) |
 | **Excel Cache Minutes** | *(optional)* Minutes to cache parsed Excel data (defaults to `5`) |
-| **Entra ID Tenant ID** | *(optional)* Entra tenant ID for OAuth Bearer validation. Leave empty to disable |
-| **Entra ID Client ID** | *(optional)* App registration client ID for OAuth. Leave empty to disable |
+| **Claims Validator Provider** | *(optional)* `excel` (default) or `hrapi` |
+| **HR API Base URL** | *(optional)* Base URL of your HR REST API. Required when using `hrapi` provider |
+| **HR API Auth Mode** | *(optional)* `apikey` or `oauth`. Required when using `hrapi` provider |
+| **HR API API Key** | *(optional, secure)* API key for HR API. Required when auth mode is `apikey` |
+| **HR API OAuth Scope** | *(optional)* OAuth scope for HR API. Required when auth mode is `oauth` |
 
 The template deploys:
 - **Azure Function App** (Consumption plan, .NET 10 isolated worker, v4 runtime)
@@ -214,72 +217,23 @@ When the function is registered as an **Entra ID custom authentication extension
 | `EntraId__TenantId` | Your Entra ID tenant ID (GUID) |
 | `EntraId__ClientId` | Application (client) ID of the Function App's app registration |
 
-```json
-{
-  "EntraId__TenantId": "00000000-0000-0000-0000-000000000000",
-  "EntraId__ClientId": "00000000-0000-0000-0000-000000000000"
-}
-```
+> **Note:** The `EntraId__TenantId` and `EntraId__ClientId` app settings are no longer used. Authentication is handled entirely by EasyAuth. Keep these empty or remove them from your Function App's environment variables.
 
-> When `EntraId` settings are **not configured**, Bearer token validation is skipped. This lets you test locally without needing an app registration.
+#### Verifying Authentication
 
-#### Authentication Behavior Summary
+Once EasyAuth is configured, verify it works:
 
-The function uses `AuthorizationLevel.Anonymous` — there are no function keys. All authentication is via OAuth 2.0 Bearer tokens validated by `TokenValidationService`.
-
-| Scenario | Bearer Token | Result |
-|----------|:---:|--------|
-| EntraId not configured | — | Allowed (validation disabled — local dev only) |
-| EntraId configured | ✅ valid | Allowed |
-| EntraId configured | ❌ invalid | 401 |
-| EntraId configured | — (absent) | 401 |
-
-#### App Registrations
-
-Two app registrations are involved in the OAuth 2.0 client credentials flow:
-
-| Role | App ID | Purpose |
-|------|--------|---------|
-| **API app** (Function App identity) | `5528a4be-4453-44f1-82f6-2ce4130cac1b` | Configured as `EntraId__ClientId`. Tokens must have this app as the `aud` (audience) claim to be accepted. |
-| **Production client** (Entra custom auth extension) | `99045fe1-7639-4a75-9d4a-577b6ca3810f` | Microsoft's built-in app ID. In production, Entra's custom authentication extension infrastructure acquires a token using this identity automatically — no setup needed. Validated via the `azp` claim. |
-| **Test client** (manual testing, e.g. Insomnia) | `8144934d-9b73-4f0b-a7ac-e3958c811bac` | Optional. Used to manually acquire tokens via `client_credentials` to simulate what Entra does. Only needed for testing outside the Entra flow. |
-
-To allow the test client, add its app ID to `EntraId:AuthorizedClientAppIds` (semicolon-separated):
-```
-EntraId__AuthorizedClientAppIds=99045fe1-7639-4a75-9d4a-577b6ca3810f;8144934d-9b73-4f0b-a7ac-e3958c811bac
-```
-
-#### Setting Up the App Registration
-
-To enable OAuth 2.0 for the Entra custom authentication extension (see [Learn doc](https://learn.microsoft.com/en-us/entra/identity-platform/custom-extension-tokenissuancestart-configuration?tabs=azure-portal%2Cworkforce-tenant)):
-
-1. **Register the custom authentication extension** in Entra ID → Enterprise applications → Custom authentication extensions
-2. Select the **TokenIssuanceStart** event type
-3. Set the **Target URL** to your Azure Function endpoint
-4. Under **API Authentication**, create a new app registration (this becomes the API app / audience)
-5. **Grant admin consent** for the `Receive custom authentication extension HTTP requests` permission
-6. Set `EntraId__TenantId` and `EntraId__ClientId` (the API app's client ID) in the Function App's app settings
-
-#### Verifying the Custom Authentication Extension Flow
-
-The Entra ID custom authentication extension always authenticates to your Azure Function using the OAuth 2.0 `client_credentials` flow. The well-known Microsoft app ID `99045fe1-7639-4a75-9d4a-577b6ca3810f` is the authorized caller (configured via `EntraId:AuthorizedClientAppIds`).
-
-Once `EntraId__TenantId` and `EntraId__ClientId` are configured, you can verify end-to-end by triggering the sign-in flow that invokes the custom authentication extension (see [Step 5 in the Learn doc](https://learn.microsoft.com/en-us/entra/identity-platform/custom-extension-tokenissuancestart-configuration?tabs=azure-portal%2Cworkforce-tenant#step-5-test-the-application)):
-
-```
-https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize?client_id={App_to_enrich_ID}&response_type=id_token&redirect_uri=https://jwt.ms&scope=openid&state=12345&nonce=12345
-```
+1. **Without a token:** Call the function URL directly — you should get `401 Unauthorized`
+2. **With a valid token:** Include a Bearer token with the correct audience — you should get the claims validation response
 
 **Verify in Application Insights logs:**
 
 ```kusto
 traces
-| where message has "Bearer token"
+| where message has "claims" or message has "validation"
 | order by timestamp desc
 | take 10
 ```
-
-You should see `Bearer token validated successfully. azp=99045fe1-7639-4a75-9d4a-577b6ca3810f` for successful calls from the custom authentication extension.
 
 ## Claims Validation Providers
 
@@ -376,16 +330,15 @@ or on failure:
 
 ---
 
-### OneDrive Excel Provider (`excel`)
+### Excel Provider (`excel`)
 
-Downloads an Excel file from a public OneDrive sharing link and parses it locally using ClosedXML. **No authentication or Graph permissions required** — just share the file with "Anyone with the link" and provide the sharing URL.
+Downloads an Excel file from any HTTP(S) URL and parses it locally using ClosedXML. **No authentication or Graph permissions required** — host the file on any web server with read access and provide the direct download URL.
 
 #### Setup
 
-1. Upload your Excel file to OneDrive (Personal or Business)
-2. Right-click → **Share** → set access to **"Anyone with the link"**
-3. Copy the sharing link
-4. Set the link as an app setting
+1. Upload your Excel file to a web server, file share, or cloud storage service (for example, Azure Blob Storage, SharePoint, or any HTTP-accessible location)
+2. Get a direct download URL for the file. The URL must be accessible without interactive sign-in
+3. Set the URL as an app setting
 
 #### Excel File Format
 
@@ -413,7 +366,7 @@ Add these to `local.settings.json` (local) or Function App **Configuration** (Az
 
 ```json
 {
-  "Excel__ShareUrl": "https://1drv.ms/x/s!your-share-link",
+  "Excel__ShareUrl": "https://your-server.com/path/to/file.xlsx",
   "Excel__SheetName": "Sheet1"
 }
 ```

@@ -64,20 +64,6 @@
         "description": "Minutes to cache the parsed Excel data in memory (defaults to 5)."
       }
     },
-    "entraIdTenantId": {
-      "type": "string",
-      "defaultValue": "",
-      "metadata": {
-        "description": "Entra ID tenant ID for OAuth 2.0 Bearer token validation. Leave empty to disable."
-      }
-    },
-    "entraIdClientId": {
-      "type": "string",
-      "defaultValue": "",
-      "metadata": {
-        "description": "Entra ID application (client) ID of the Function App's app registration for OAuth 2.0. Leave empty to disable."
-      }
-    },
     "claimsValidatorProvider": {
       "type": "string",
       "defaultValue": "excel",
@@ -246,14 +232,6 @@
             {
               "name": "Excel__CacheMinutes",
               "value": "[string(parameters('excelCacheMinutes'))]"
-            },
-            {
-              "name": "EntraId__TenantId",
-              "value": "[parameters('entraIdTenantId')]"
-            },
-            {
-              "name": "EntraId__ClientId",
-              "value": "[parameters('entraIdClientId')]"
             },
             {
               "name": "ClaimsValidator__Provider",
