@@ -197,22 +197,14 @@ https://<your-function-app-name>.azurewebsites.net/api/CustomClaimMatching
 
 ### Authentication
 
-The function supports **two authentication layers** that can work independently or together:
+The function uses `AuthorizationLevel.Anonymous` — **no function keys are required**. All authentication is via OAuth 2.0 Bearer tokens validated by `TokenValidationService`.
 
-#### 1. Function Key (Testing)
-
-The function uses `AuthorizationLevel.Function`, requiring a function key:
-- Query parameter: `?code=<function-key>`
-- Header: `x-functions-key: <function-key>`
-
-Use this for manual testing from tools like Insomnia, Postman, or curl.
-
-#### 2. OAuth 2.0 Client Credentials Flow (Entra Custom Auth Extension)
+#### OAuth 2.0 Client Credentials Flow (Entra Custom Auth Extension)
 
 When the function is registered as an **Entra ID custom authentication extension**, Entra calls it using the OAuth 2.0 client credentials flow:
 
 1. Entra acquires a token from `https://login.microsoftonline.com/{tenantId}/v2.0` with the Function App's app registration as the audience
-2. Entra sends the token in the `Authorization: Bearer <token>` header (along with the function key in the URL)
+2. Entra sends the token in the `Authorization: Bearer <token>` header
 3. The function validates the JWT — checking issuer, audience, signature, and expiration via OIDC discovery
 
 **Required App Settings** (enable Bearer token validation):
