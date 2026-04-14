@@ -13,7 +13,7 @@ builder.Services
     .ConfigureFunctionsApplicationInsights();
 
 // Register Entra ID Bearer token validation (OAuth 2.0 client credentials flow).
-// Configure AzureAd:TenantId and AzureAd:ClientId to enable.
+// Configure EntraId:TenantId and EntraId:ClientId to enable.
 // When not configured, token validation is skipped (function key auth only).
 builder.Services.AddSingleton<TokenValidationService>();
 

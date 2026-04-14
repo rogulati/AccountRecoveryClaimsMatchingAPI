@@ -219,17 +219,17 @@ When the function is registered as an **Entra ID custom authentication extension
 
 | Setting | Description |
 |---------|-------------|
-| `AzureAd__TenantId` | Your Entra tenant ID (GUID) |
-| `AzureAd__ClientId` | Application (client) ID of the Function App's app registration |
+| `EntraId__TenantId` | Your Entra ID tenant ID (GUID) |
+| `EntraId__ClientId` | Application (client) ID of the Function App's app registration |
 
 ```json
 {
-  "AzureAd__TenantId": "00000000-0000-0000-0000-000000000000",
-  "AzureAd__ClientId": "00000000-0000-0000-0000-000000000000"
+  "EntraId__TenantId": "00000000-0000-0000-0000-000000000000",
+  "EntraId__ClientId": "00000000-0000-0000-0000-000000000000"
 }
 ```
 
-> When `AzureAd` settings are **not configured**, Bearer token validation is skipped and only function key auth applies. This lets you test with just a function key without needing an app registration.
+> When `EntraId` settings are **not configured**, Bearer token validation is skipped. This lets you test locally without needing an app registration.
 
 #### Authentication Behavior Summary
 
@@ -237,10 +237,10 @@ The function uses `AuthorizationLevel.Anonymous` — there are no function keys.
 
 | Scenario | Bearer Token | Result |
 |----------|:---:|--------|
-| AzureAd not configured | — | Allowed (validation disabled — local dev only) |
-| AzureAd configured | ✅ valid | Allowed |
-| AzureAd configured | ❌ invalid | 401 |
-| AzureAd configured | — (absent) | 401 |
+| EntraId not configured | — | Allowed (validation disabled — local dev only) |
+| EntraId configured | ✅ valid | Allowed |
+| EntraId configured | ❌ invalid | 401 |
+| EntraId configured | — (absent) | 401 |
 
 #### App Registrations
 
@@ -248,13 +248,13 @@ Two app registrations are involved in the OAuth 2.0 client credentials flow:
 
 | Role | App ID | Purpose |
 |------|--------|---------|
-| **API app** (Function App identity) | `5528a4be-4453-44f1-82f6-2ce4130cac1b` | Configured as `AzureAd__ClientId`. Tokens must have this app as the `aud` (audience) claim to be accepted. |
+| **API app** (Function App identity) | `5528a4be-4453-44f1-82f6-2ce4130cac1b` | Configured as `EntraId__ClientId`. Tokens must have this app as the `aud` (audience) claim to be accepted. |
 | **Production client** (Entra custom auth extension) | `99045fe1-7639-4a75-9d4a-577b6ca3810f` | Microsoft's built-in app ID. In production, Entra's custom authentication extension infrastructure acquires a token using this identity automatically — no setup needed. Validated via the `azp` claim. |
 | **Test client** (manual testing, e.g. Insomnia) | `8144934d-9b73-4f0b-a7ac-e3958c811bac` | Optional. Used to manually acquire tokens via `client_credentials` to simulate what Entra does. Only needed for testing outside the Entra flow. |
 
-To allow the test client, add its app ID to `AzureAd:AuthorizedClientAppIds` (semicolon-separated):
+To allow the test client, add its app ID to `EntraId:AuthorizedClientAppIds` (semicolon-separated):
 ```
-AzureAd__AuthorizedClientAppIds=99045fe1-7639-4a75-9d4a-577b6ca3810f;8144934d-9b73-4f0b-a7ac-e3958c811bac
+EntraId__AuthorizedClientAppIds=99045fe1-7639-4a75-9d4a-577b6ca3810f;8144934d-9b73-4f0b-a7ac-e3958c811bac
 ```
 
 #### Setting Up the App Registration
@@ -266,13 +266,13 @@ To enable OAuth 2.0 for the Entra custom authentication extension (see [Learn do
 3. Set the **Target URL** to your Azure Function endpoint
 4. Under **API Authentication**, create a new app registration (this becomes the API app / audience)
 5. **Grant admin consent** for the `Receive custom authentication extension HTTP requests` permission
-6. Set `AzureAd__TenantId` and `AzureAd__ClientId` (the API app's client ID) in the Function App's app settings
+6. Set `EntraId__TenantId` and `EntraId__ClientId` (the API app's client ID) in the Function App's app settings
 
 #### Verifying the Custom Authentication Extension Flow
 
-The Entra ID custom authentication extension always authenticates to your Azure Function using the OAuth 2.0 `client_credentials` flow. The well-known Microsoft app ID `99045fe1-7639-4a75-9d4a-577b6ca3810f` is the authorized caller (configured via `AzureAd:AuthorizedClientAppIds`).
+The Entra ID custom authentication extension always authenticates to your Azure Function using the OAuth 2.0 `client_credentials` flow. The well-known Microsoft app ID `99045fe1-7639-4a75-9d4a-577b6ca3810f` is the authorized caller (configured via `EntraId:AuthorizedClientAppIds`).
 
-Once `AzureAd__TenantId` and `AzureAd__ClientId` are configured, you can verify end-to-end by triggering the sign-in flow that invokes the custom authentication extension (see [Step 5 in the Learn doc](https://learn.microsoft.com/en-us/entra/identity-platform/custom-extension-tokenissuancestart-configuration?tabs=azure-portal%2Cworkforce-tenant#step-5-test-the-application)):
+Once `EntraId__TenantId` and `EntraId__ClientId` are configured, you can verify end-to-end by triggering the sign-in flow that invokes the custom authentication extension (see [Step 5 in the Learn doc](https://learn.microsoft.com/en-us/entra/identity-platform/custom-extension-tokenissuancestart-configuration?tabs=azure-portal%2Cworkforce-tenant#step-5-test-the-application)):
 
 ```
 https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize?client_id={App_to_enrich_ID}&response_type=id_token&redirect_uri=https://jwt.ms&scope=openid&state=12345&nonce=12345

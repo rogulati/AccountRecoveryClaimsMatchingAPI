@@ -10,7 +10,7 @@ namespace account_recovery_claim_matching;
 /// <summary>
 /// Validates JWT Bearer tokens issued by Entra ID via the OAuth 2.0 client credentials flow.
 /// Used when the function is called by an Entra custom authentication extension.
-/// When AzureAd settings are not configured, token validation is skipped (testing mode).
+/// When EntraId settings are not configured, token validation is skipped (testing mode).
 /// </summary>
 public class TokenValidationService
 {
@@ -24,21 +24,21 @@ public class TokenValidationService
     {
         _logger = logger;
 
-        var tenantId = configuration["AzureAd:TenantId"];
-        var clientId = configuration["AzureAd:ClientId"];
+        var tenantId = configuration["EntraId:TenantId"];
+        var clientId = configuration["EntraId:ClientId"];
 
         _isEnabled = !string.IsNullOrEmpty(tenantId) && !string.IsNullOrEmpty(clientId);
 
         // Build the list of authorized calling app IDs (azp claim).
-        // AzureAd:AuthorizedClientAppIds is a semicolon-separated list; defaults to Entra custom auth extension app.
-        var authorizedApps = configuration["AzureAd:AuthorizedClientAppIds"] ?? "99045fe1-7639-4a75-9d4a-577b6ca3810f";
+        // EntraId:AuthorizedClientAppIds is a semicolon-separated list; defaults to Entra custom auth extension app.
+        var authorizedApps = configuration["EntraId:AuthorizedClientAppIds"] ?? "99045fe1-7639-4a75-9d4a-577b6ca3810f";
         _authorizedClientAppIds = new HashSet<string>(
             authorizedApps.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             StringComparer.OrdinalIgnoreCase);
 
         if (!_isEnabled)
         {
-            _logger.LogInformation("AzureAd settings not configured — Bearer token validation is disabled.");
+            _logger.LogInformation("EntraId settings not configured — Bearer token validation is disabled.");
             return;
         }
 

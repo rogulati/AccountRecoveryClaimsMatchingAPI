@@ -47,7 +47,7 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Public OneDrive sharing link to the Excel file. Required only when using the excel provider."
+        "description": "HTTP(S) URL to the Excel file (OneDrive link, Azure Blob SAS URL, or any web-hosted .xlsx). Required only when using the excel provider."
       }
     },
     "excelSheetName": {
@@ -64,18 +64,18 @@
         "description": "Minutes to cache the parsed Excel data in memory (defaults to 5)."
       }
     },
-    "azureAdTenantId": {
+    "entraIdTenantId": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Entra tenant ID for OAuth 2.0 Bearer token validation. Leave empty to disable (function key auth only)."
+        "description": "Entra ID tenant ID for OAuth 2.0 Bearer token validation. Leave empty to disable."
       }
     },
-    "azureAdClientId": {
+    "entraIdClientId": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Application (client) ID of the Function App's app registration for OAuth 2.0. Leave empty to disable."
+        "description": "Entra ID application (client) ID of the Function App's app registration for OAuth 2.0. Leave empty to disable."
       }
     }
   },
@@ -204,12 +204,12 @@
               "value": "[string(parameters('excelCacheMinutes'))]"
             },
             {
-              "name": "AzureAd__TenantId",
-              "value": "[parameters('azureAdTenantId')]"
+              "name": "EntraId__TenantId",
+              "value": "[parameters('entraIdTenantId')]"
             },
             {
-              "name": "AzureAd__ClientId",
-              "value": "[parameters('azureAdClientId')]"
+              "name": "EntraId__ClientId",
+              "value": "[parameters('entraIdClientId')]"
             }
           ]
         }
