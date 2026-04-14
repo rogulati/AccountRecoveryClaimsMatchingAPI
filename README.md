@@ -290,6 +290,8 @@ The function uses a pluggable validation architecture (`IClaimsValidator`). The 
 | `excel` | **HTTP Excel** (default) | Downloads an Excel file from any HTTP(S) URL — OneDrive sharing links, Azure Blob Storage, or any web-hosted `.xlsx`. Use this for testing. |
 | `hrapi` | **HR API** | Calls an external HR REST API to validate claims. Use this in production. |
 
+> **Note:** The Excel provider only validates the `documentNumber` claim against the matching column in the spreadsheet. It is intended for testing purposes only. The HR API provider forwards all claims to the external API for validation.
+
 Set the provider in `local.settings.json`:
 ```json
 {
