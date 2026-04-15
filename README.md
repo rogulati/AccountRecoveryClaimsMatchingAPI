@@ -172,11 +172,9 @@ You will be prompted for the following parameters:
 | Parameter | Description |
 |-----------|-------------|
 | **Function App Name** | Globally unique name for the Function App |
-| **Repo URL** | GitHub repository URL for source deployment (pre-filled) |
-| **Branch** | Repository branch to deploy from (defaults to `main`) |
 | **Storage Account Type** | Storage SKU — `Standard_LRS`, `Standard_GRS`, or `Standard_RAGRS` |
 | **Location** | Azure region (defaults to the resource group's location) |
-| **Excel Share URL** | *(optional)* Direct download URL for the Excel file (Azure Blob Storage, SharePoint, or any web-hosted .xlsx) |
+| **Excel Share URL** | *(optional)* HTTP(S) URL to the Excel file (OneDrive, Azure Blob, etc.) |
 | **Excel Sheet Name** | *(optional)* Worksheet name (defaults to `Sheet1`) |
 | **Excel Cache Minutes** | *(optional)* Minutes to cache parsed Excel data (defaults to `5`) |
 | **Claims Validator Provider** | *(optional)* `excel` (default) or `hrapi` |
@@ -184,12 +182,30 @@ You will be prompted for the following parameters:
 | **HR API Auth Mode** | *(optional)* `apikey` or `oauth`. Required when using `hrapi` provider |
 | **HR API API Key** | *(optional, secure)* API key for HR API. Required when auth mode is `apikey` |
 | **HR API OAuth Scope** | *(optional)* OAuth scope for HR API. Required when auth mode is `oauth` |
+| **Entra ID Tenant ID** | *(optional)* Entra ID tenant ID for OAuth Bearer validation. Leave empty to disable |
+| **Entra ID Client ID** | *(optional)* App registration client ID for OAuth. Leave empty to disable |
 
-The template deploys:
+The template deploys the **infrastructure only** (no code):
 - **Azure Function App** (Consumption plan, .NET 10 isolated worker, v4 runtime)
-- **Storage Account** — Required runtime dependency for Azure Functions on the Consumption plan. The Functions host uses it for trigger management, function keys, and internal orchestration (`AzureWebJobsStorage`). On Consumption plans, it also hosts an Azure Files share that stores the deployed function code for scale-out (`WEBSITE_CONTENTSHARE`). Your application code does not interact with it directly.
+- **Storage Account** — Required runtime dependency for Azure Functions on the Consumption plan. The Functions host uses it for trigger management and internal orchestration (`AzureWebJobsStorage`). On Consumption plans, it also hosts an Azure Files share that stores the deployed function code for scale-out (`WEBSITE_CONTENTSHARE`). Your application code does not interact with it directly.
 - **Application Insights** for monitoring and logging
 - **System-assigned Managed Identity**
+
+### Deploy the Function Code
+
+After the ARM template creates the infrastructure, publish and deploy the code:
+
+```powershell
+# Build and publish
+dotnet publish --configuration Release --output ./publish
+
+# Deploy to Azure (requires Azure CLI)
+cd ./publish
+Compress-Archive -Path ./* -DestinationPath ../deploy.zip -Force
+cd ..
+az functionapp deployment source config-zip `
+  -g <resource-group> -n <function-app-name> --src deploy.zip
+```
 
 ### Post-Deployment
 

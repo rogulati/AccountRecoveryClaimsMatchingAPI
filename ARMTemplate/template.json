@@ -10,20 +10,6 @@
         "description": "Name of the Azure Function App. Must be globally unique."
       }
     },
-    "repoURL": {
-      "type": "string",
-      "defaultValue": "https://github.com/rogulati/AccountRecoveryClaimsMatchingAPI.git",
-      "metadata": {
-        "description": "GitHub repository URL for source deployment."
-      }
-    },
-    "branch": {
-      "type": "string",
-      "defaultValue": "main",
-      "metadata": {
-        "description": "GitHub repository branch."
-      }
-    },
     "storageAccountType": {
       "type": "string",
       "defaultValue": "Standard_LRS",
@@ -106,6 +92,20 @@
       "defaultValue": "",
       "metadata": {
         "description": "OAuth scope for the HR API (for example, api://hr-api-app-id/.default). Required when hrApiAuthMode is 'oauth'."
+      }
+    },
+    "entraIdTenantId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Entra ID tenant ID for OAuth 2.0 Bearer token validation. Leave empty to disable."
+      }
+    },
+    "entraIdClientId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Entra ID application (client) ID of the Function App's app registration for OAuth 2.0. Leave empty to disable."
       }
     }
   },
@@ -218,10 +218,6 @@
               "value": "600"
             },
             {
-              "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
-              "value": "true"
-            },
-            {
               "name": "Excel__ShareUrl",
               "value": "[parameters('excelShareUrl')]"
             },
@@ -236,6 +232,18 @@
             {
               "name": "ClaimsValidator__Provider",
               "value": "[parameters('claimsValidatorProvider')]"
+            },
+            {
+              "name": "WEBSITE_RUN_FROM_PACKAGE",
+              "value": "1"
+            },
+            {
+              "name": "EntraId__TenantId",
+              "value": "[parameters('entraIdTenantId')]"
+            },
+            {
+              "name": "EntraId__ClientId",
+              "value": "[parameters('entraIdClientId')]"
             },
             {
               "name": "HrApi__BaseUrl",
@@ -255,23 +263,7 @@
             }
           ]
         }
-      },
-      "resources": [
-        {
-          "type": "sourcecontrols",
-          "apiVersion": "2022-09-01",
-          "name": "web",
-          "location": "[parameters('location')]",
-          "dependsOn": [
-            "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]"
-          ],
-          "properties": {
-            "repoUrl": "[parameters('repoURL')]",
-            "branch": "[parameters('branch')]",
-            "isManualIntegration": true
-          }
-        }
-      ]
+      }
     },
     {
       "type": "Microsoft.Web/sites/hostNameBindings",
