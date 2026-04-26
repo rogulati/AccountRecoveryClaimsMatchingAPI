@@ -184,28 +184,18 @@ You will be prompted for the following parameters:
 | **HR API OAuth Scope** | *(optional)* OAuth scope for HR API. Required when auth mode is `oauth` |
 | **Entra ID Tenant ID** | *(optional)* Entra ID tenant ID for OAuth Bearer validation. Leave empty to disable |
 | **Entra ID Client ID** | *(optional)* App registration client ID for OAuth. Leave empty to disable |
+| **Repo URL** | *(optional)* GitHub repository URL for source deployment (defaults to this repo) |
+| **Branch** | *(optional)* Branch to deploy (defaults to `main`) |
+| **.NET Version** | *(optional)* `.NET` runtime version — `v10.0` (default) or `v8.0`. Use `v8.0` if .NET 10 is not yet available in your region |
 
-The template deploys the **infrastructure only** (no code):
-- **Azure Function App** (Consumption plan, .NET 10 isolated worker, v4 runtime)
+The template deploys **both infrastructure and code**:
+- **Azure Function App** (Consumption plan, .NET isolated worker, v4 runtime)
+- **Source control integration** — automatically pulls and builds the function code from the GitHub repository
 - **Storage Account** — Required runtime dependency for Azure Functions on the Consumption plan. The Functions host uses it for trigger management and internal orchestration (`AzureWebJobsStorage`). On Consumption plans, it also hosts an Azure Files share that stores the deployed function code for scale-out (`WEBSITE_CONTENTSHARE`). Your application code does not interact with it directly.
 - **Application Insights** for monitoring and logging
 - **System-assigned Managed Identity**
 
-### Deploy the Function Code
-
-After the ARM template creates the infrastructure, publish and deploy the code:
-
-```powershell
-# Build and publish
-dotnet publish --configuration Release --output ./publish
-
-# Deploy to Azure (requires Azure CLI)
-cd ./publish
-Compress-Archive -Path ./* -DestinationPath ../deploy.zip -Force
-cd ..
-az functionapp deployment source config-zip `
-  -g <resource-group> -n <function-app-name> --src deploy.zip
-```
+> **Note:** If you see a "Runtime version: Error" after deployment, your region may not support .NET 10 on the Consumption plan yet. Redeploy with the **.NET Version** parameter set to `v8.0`.
 
 ### Post-Deployment
 
