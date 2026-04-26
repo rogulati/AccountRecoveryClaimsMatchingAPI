@@ -259,18 +259,6 @@
               "value": "[parameters('claimsValidatorProvider')]"
             },
             {
-              "name": "SCM_DO_BUILD_DURING_DEPLOYMENT",
-              "value": "true"
-            },
-            {
-              "name": "ENABLE_ORYX_BUILD",
-              "value": "true"
-            },
-            {
-              "name": "PROJECT",
-              "value": "account-recovery-claim-matching.csproj"
-            },
-            {
               "name": "EntraId__TenantId",
               "value": "[parameters('entraIdTenantId')]"
             },
