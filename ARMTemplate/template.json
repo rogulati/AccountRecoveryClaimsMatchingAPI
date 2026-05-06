@@ -136,7 +136,7 @@
   },
   "variables": {
     "hostingPlanName": "[concat(parameters('functionAppName'), '-plan')]",
-    "storageAccountName": "[concat(uniqueString(resourceGroup().id), 'azfunc')]",
+    "storageAccountName": "[concat(take(toLower(replace(replace(replace(parameters('functionAppName'), '-', ''), '_', ''), ' ', '')), 10), take(uniqueString(resourceGroup().id), 8), 'sa')]",
     "applicationInsightsName": "[concat(parameters('functionAppName'), '-ai')]"
   },
   "resources": [
