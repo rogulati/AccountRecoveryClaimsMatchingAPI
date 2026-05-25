@@ -391,7 +391,7 @@
       },
       "dependsOn": [
         "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
-        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.Web/sites', parameters('functionAppName')), variables('deployerIdentityName'), variables('websiteContributorRoleId')))]"
+        "[extensionResourceId(resourceId('Microsoft.Web/sites', parameters('functionAppName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.Web/sites', parameters('functionAppName')), variables('deployerIdentityName'), variables('websiteContributorRoleId')))]"
       ],
       "properties": {
         "azCliVersion": "2.61.0",
