@@ -48,7 +48,14 @@ public class TokenValidationService
 
         _configManager = new ConfigurationManager<OpenIdConnectConfiguration>(
             $"{authority}/.well-known/openid-configuration",
-            new OpenIdConnectConfigurationRetriever());
+            new OpenIdConnectConfigurationRetriever())
+        {
+            // Refresh OIDC metadata (incl. JWKS) in the background every 12h.
+            // RefreshInterval is the minimum interval between refresh attempts after a failure —
+            // bounding it keeps the JWKS fetch off the hot CAE request path.
+            AutomaticRefreshInterval = TimeSpan.FromHours(12),
+            RefreshInterval = TimeSpan.FromMinutes(5)
+        };
 
         _validationParameters = new TokenValidationParameters
         {
@@ -66,6 +73,30 @@ public class TokenValidationService
     }
 
     public bool IsEnabled => _isEnabled;
+
+    /// <summary>
+    /// Pre-fetches OIDC metadata + JWKS so the first CAE request does not pay the network cost.
+    /// Safe to call multiple times; subsequent calls are served from the cache.
+    /// Failures are swallowed and logged — token validation will retry on first real request.
+    /// </summary>
+    public async Task WarmupAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_isEnabled || _configManager == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var config = await _configManager.GetConfigurationAsync(cancellationToken);
+            _logger.LogInformation("OIDC metadata pre-warmed. Issuer={Issuer}, SigningKeyCount={Count}",
+                config.Issuer, config.SigningKeys.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "OIDC metadata pre-warm failed; will retry on first request.");
+        }
+    }
 
     public async Task<(bool IsValid, string? ErrorMessage)> ValidateTokenAsync(string token)
     {

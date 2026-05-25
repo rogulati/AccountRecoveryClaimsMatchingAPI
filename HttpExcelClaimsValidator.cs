@@ -6,6 +6,11 @@ namespace account_recovery_claim_matching;
 
 public class HttpExcelClaimsValidator : IClaimsValidator
 {
+    // Hard upper bound on the Excel download. Only applies on cache-miss — hot path
+    // is served from the in-memory cache. Keeps the call within the CAE budget on the
+    // first request after a cold start or cache expiry.
+    private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMilliseconds(1200);
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<HttpExcelClaimsValidator> _logger;
     private readonly string _downloadUrl;
@@ -118,71 +123,85 @@ public class HttpExcelClaimsValidator : IClaimsValidator
             var directUrl = NormalizeDownloadUrl(_downloadUrl);
             _logger.LogInformation("Download URL: {Url}", directUrl);
 
-            using var response = await _httpClient.GetAsync(directUrl);
-            if (!response.IsSuccessStatusCode)
+            using var cts = new CancellationTokenSource(DownloadTimeout);
+            HttpResponseMessage response;
+            try
             {
-                _logger.LogError("Failed to download Excel file. Status: {Status}, Reason: {Reason}", response.StatusCode, response.ReasonPhrase);
-                var body = await response.Content.ReadAsStringAsync();
-                _logger.LogError("Response body (first 500 chars): {Body}", body.Length > 500 ? body[..500] : body);
+                response = await _httpClient.GetAsync(directUrl, cts.Token);
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                _logger.LogWarning("Excel download exceeded {Timeout}ms budget.", DownloadTimeout.TotalMilliseconds);
                 return null;
             }
 
-            var contentType = response.Content.Headers.ContentType?.MediaType ?? "unknown";
-            _logger.LogInformation("Download succeeded. ContentType: {ContentType}, Size: {Size}", contentType, response.Content.Headers.ContentLength);
-
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var workbook = new XLWorkbook(stream);
-
-            var worksheet = workbook.Worksheets.TryGetWorksheet(_sheetName, out var ws)
-                ? ws
-                : workbook.Worksheets.FirstOrDefault();
-
-            if (worksheet == null)
+            using (response)
             {
-                _logger.LogWarning("No worksheet found.");
-                return null;
-            }
-
-            var usedRange = worksheet.RangeUsed();
-            if (usedRange == null)
-            {
-                _logger.LogWarning("Worksheet is empty.");
-                return null;
-            }
-
-            // Build column map from header row
-            var headerRow = usedRange.Row(1);
-            var columns = new List<(string Name, int Index)>();
-            for (int col = 1; col <= usedRange.ColumnCount(); col++)
-            {
-                var colName = headerRow.Cell(col).GetString()?.Trim();
-                if (!string.IsNullOrEmpty(colName))
-                    columns.Add((colName.ToUpperInvariant(), col));
-            }
-
-            // Parse all data rows into a list of dictionaries
-            var rows = new List<Dictionary<string, string>>();
-            for (int row = 2; row <= usedRange.RowCount(); row++)
-            {
-                var dataRow = usedRange.Row(row);
-                var rowDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var (name, index) in columns)
+                if (!response.IsSuccessStatusCode)
                 {
-                    var value = dataRow.Cell(index).GetString()?.Trim();
-                    if (!string.IsNullOrEmpty(value))
-                        rowDict[name] = value;
+                    _logger.LogError("Failed to download Excel file. Status: {Status}, Reason: {Reason}", response.StatusCode, response.ReasonPhrase);
+                    var body = await response.Content.ReadAsStringAsync(cts.Token);
+                    _logger.LogError("Response body (first 500 chars): {Body}", body.Length > 500 ? body[..500] : body);
+                    return null;
                 }
-                if (rowDict.Count > 0)
-                    rows.Add(rowDict);
+
+                var contentType = response.Content.Headers.ContentType?.MediaType ?? "unknown";
+                _logger.LogInformation("Download succeeded. ContentType: {ContentType}, Size: {Size}", contentType, response.Content.Headers.ContentLength);
+
+                using var stream = await response.Content.ReadAsStreamAsync(cts.Token);
+                using var workbook = new XLWorkbook(stream);
+
+                var worksheet = workbook.Worksheets.TryGetWorksheet(_sheetName, out var ws)
+                    ? ws
+                    : workbook.Worksheets.FirstOrDefault();
+
+                if (worksheet == null)
+                {
+                    _logger.LogWarning("No worksheet found.");
+                    return null;
+                }
+
+                var usedRange = worksheet.RangeUsed();
+                if (usedRange == null)
+                {
+                    _logger.LogWarning("Worksheet is empty.");
+                    return null;
+                }
+
+                // Build column map from header row
+                var headerRow = usedRange.Row(1);
+                var columns = new List<(string Name, int Index)>();
+                for (int col = 1; col <= usedRange.ColumnCount(); col++)
+                {
+                    var colName = headerRow.Cell(col).GetString()?.Trim();
+                    if (!string.IsNullOrEmpty(colName))
+                        columns.Add((colName.ToUpperInvariant(), col));
+                }
+
+                // Parse all data rows into a list of dictionaries
+                var rows = new List<Dictionary<string, string>>();
+                for (int row = 2; row <= usedRange.RowCount(); row++)
+                {
+                    var dataRow = usedRange.Row(row);
+                    var rowDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var (name, index) in columns)
+                    {
+                        var value = dataRow.Cell(index).GetString()?.Trim();
+                        if (!string.IsNullOrEmpty(value))
+                            rowDict[name] = value;
+                    }
+                    if (rowDict.Count > 0)
+                        rows.Add(rowDict);
+                }
+
+                _cachedRows = rows;
+                _cacheExpiry = DateTime.UtcNow.Add(_cacheDuration);
+
+                _logger.LogInformation("Excel data cached: {RowCount} rows, expires at {Expiry}",
+                    rows.Count, _cacheExpiry.ToString("HH:mm:ss"));
+
+                return _cachedRows;
             }
-
-            _cachedRows = rows;
-            _cacheExpiry = DateTime.UtcNow.Add(_cacheDuration);
-
-            _logger.LogInformation("Excel data cached: {RowCount} rows, expires at {Expiry}",
-                rows.Count, _cacheExpiry.ToString("HH:mm:ss"));
-
-            return _cachedRows;
         }
         finally
         {
