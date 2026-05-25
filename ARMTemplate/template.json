@@ -403,7 +403,7 @@
           { "name": "RG", "value": "[resourceGroup().name]" },
           { "name": "FUNCTION_APP", "value": "[parameters('functionAppName')]" }
         ],
-        "scriptContent": "set -e\necho \"Downloading $PACKAGE_URL\"\ncurl -fL --retry 3 --retry-delay 5 -o /tmp/app.zip \"$PACKAGE_URL\"\necho \"Downloaded $(stat -c %s /tmp/app.zip) bytes\"\necho \"Publishing to function app $FUNCTION_APP in resource group $RG\"\naz functionapp deployment source config-zip --resource-group \"$RG\" --name \"$FUNCTION_APP\" --src /tmp/app.zip --build-remote false --timeout 600\necho \"Deployment complete.\"\n"
+        "scriptContent": "set -e\necho \"Downloading $PACKAGE_URL\"\nwget -q -O /tmp/app.zip \"$PACKAGE_URL\"\necho \"Downloaded $(stat -c %s /tmp/app.zip) bytes\"\necho \"Publishing to function app $FUNCTION_APP in resource group $RG\"\naz functionapp deployment source config-zip --resource-group \"$RG\" --name \"$FUNCTION_APP\" --src /tmp/app.zip --build-remote false --timeout 600\necho \"Deployment complete.\"\n"
       }
     }
   ],
