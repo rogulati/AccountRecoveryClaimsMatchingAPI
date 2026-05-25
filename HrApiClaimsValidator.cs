@@ -18,6 +18,12 @@ namespace account_recovery_claim_matching;
 /// </summary>
 public class HrApiClaimsValidator : IClaimsValidator
 {
+    // Hard upper bound on the outbound HR API call. The full CAE budget is ~2s end-to-end,
+    // so we keep the downstream call comfortably under that and return a deterministic
+    // "fail" rather than letting the exception bubble — a well-formed CAE response is
+    // always better than a timed-out one (which surfaces as ACAEM_CALL_FAILED_ACTION).
+    private static readonly TimeSpan DownstreamTimeout = TimeSpan.FromMilliseconds(1200);
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<HrApiClaimsValidator> _logger;
     private readonly string _baseUrl;
@@ -73,42 +79,65 @@ public class HrApiClaimsValidator : IClaimsValidator
             Encoding.UTF8,
             "application/json");
 
-        // Acquire OAuth bearer token if using OAuth mode
-        if (string.Equals(_authMode, "oauth", StringComparison.OrdinalIgnoreCase)
-            && _tokenCredential != null && _oauthScope != null)
+        using var cts = new CancellationTokenSource(DownstreamTimeout);
+
+        try
         {
-            var tokenResult = await _tokenCredential.GetTokenAsync(
-                new TokenRequestContext(new[] { _oauthScope }), CancellationToken.None);
-            _httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", tokenResult.Token);
+            // Acquire OAuth bearer token if using OAuth mode
+            if (string.Equals(_authMode, "oauth", StringComparison.OrdinalIgnoreCase)
+                && _tokenCredential != null && _oauthScope != null)
+            {
+                var tokenResult = await _tokenCredential.GetTokenAsync(
+                    new TokenRequestContext(new[] { _oauthScope }), cts.Token);
+                _httpClient.DefaultRequestHeaders.Authorization =
+                    new AuthenticationHeaderValue("Bearer", tokenResult.Token);
+            }
+
+            var response = await _httpClient.PostAsync($"{_baseUrl.TrimEnd('/')}/validate", content, cts.Token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("HR API returned {StatusCode}: {Reason}", response.StatusCode, response.ReasonPhrase);
+                return new ClaimMatchResult
+                {
+                    Result = "fail",
+                    FailedClaims = new List<string> { "hrApiError" }
+                };
+            }
+
+            var responseBody = await response.Content.ReadAsStringAsync(cts.Token);
+            var result = JsonConvert.DeserializeObject<ClaimMatchResult>(responseBody);
+
+            if (result == null)
+            {
+                _logger.LogError("HR API returned an unparseable response.");
+                return new ClaimMatchResult
+                {
+                    Result = "fail",
+                    FailedClaims = new List<string> { "hrApiError" }
+                };
+            }
+
+            _logger.LogInformation("HR API validation result: {Result}", result.Result);
+            return result;
         }
-
-        var response = await _httpClient.PostAsync($"{_baseUrl.TrimEnd('/')}/validate", content);
-
-        if (!response.IsSuccessStatusCode)
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
         {
-            _logger.LogError("HR API returned {StatusCode}: {Reason}", response.StatusCode, response.ReasonPhrase);
+            _logger.LogWarning("HR API call exceeded {Timeout}ms budget; returning deterministic fail.", DownstreamTimeout.TotalMilliseconds);
+            return new ClaimMatchResult
+            {
+                Result = "fail",
+                FailedClaims = new List<string> { "hrApiTimeout" }
+            };
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "HR API call failed.");
             return new ClaimMatchResult
             {
                 Result = "fail",
                 FailedClaims = new List<string> { "hrApiError" }
             };
         }
-
-        var responseBody = await response.Content.ReadAsStringAsync();
-        var result = JsonConvert.DeserializeObject<ClaimMatchResult>(responseBody);
-
-        if (result == null)
-        {
-            _logger.LogError("HR API returned an unparseable response.");
-            return new ClaimMatchResult
-            {
-                Result = "fail",
-                FailedClaims = new List<string> { "hrApiError" }
-            };
-        }
-
-        _logger.LogInformation("HR API validation result: {Result}", result.Result);
-        return result;
     }
 }
