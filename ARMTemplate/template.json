@@ -151,6 +151,13 @@
       "metadata": {
         "description": "The .NET version for the Function App runtime (dotnet-isolated). Defaults to 10.0."
       }
+    },
+    "packageUrl": {
+      "type": "string",
+      "defaultValue": "https://github.com/rogulati/AccountRecoveryClaimsMatchingAPI/releases/latest/download/release.zip",
+      "metadata": {
+        "description": "Public URL to the pre-built Function App release zip. Defaults to the latest GitHub Release of this repo. Override to deploy from a fork or a specific version (e.g. .../releases/download/v1.2.3/release.zip)."
+      }
     }
   },
   "variables": {
@@ -158,8 +165,12 @@
     "storageAccountName": "[concat(take(toLower(replace(replace(replace(parameters('functionAppName'), '-', ''), '_', ''), ' ', '')), 10), take(uniqueString(resourceGroup().id), 8), 'sa')]",
     "applicationInsightsName": "[concat(parameters('functionAppName'), '-ai')]",
     "deploymentContainerName": "app-package",
+    "deployerIdentityName": "[concat(parameters('functionAppName'), '-deployer')]",
+    "deploymentScriptName": "[concat(parameters('functionAppName'), '-publish-code')]",
     "storageBlobDataOwnerRoleId": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
-    "storageBlobDataOwnerRoleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', variables('storageBlobDataOwnerRoleId'))]"
+    "storageBlobDataOwnerRoleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', variables('storageBlobDataOwnerRoleId'))]",
+    "websiteContributorRoleId": "de139f84-1756-47ae-9be6-808fbbe84772",
+    "websiteContributorRoleDefinitionId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', variables('websiteContributorRoleId'))]"
   },
   "resources": [
     {
@@ -344,6 +355,56 @@
         "principalId": "[reference(resourceId('Microsoft.Web/sites', parameters('functionAppName')), '2024-04-01', 'full').identity.principalId]",
         "principalType": "ServicePrincipal"
       }
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[variables('deployerIdentityName')]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "name": "[guid(resourceId('Microsoft.Web/sites', parameters('functionAppName')), variables('deployerIdentityName'), variables('websiteContributorRoleId'))]",
+      "scope": "[concat('Microsoft.Web/sites/', parameters('functionAppName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('deployerIdentityName'))]"
+      ],
+      "properties": {
+        "roleDefinitionId": "[variables('websiteContributorRoleDefinitionId')]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('deployerIdentityName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deploymentScripts",
+      "apiVersion": "2023-08-01",
+      "name": "[variables('deploymentScriptName')]",
+      "location": "[parameters('location')]",
+      "kind": "AzureCLI",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('deployerIdentityName'))]": {}
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', parameters('functionAppName'))]",
+        "[resourceId('Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.Web/sites', parameters('functionAppName')), variables('deployerIdentityName'), variables('websiteContributorRoleId')))]"
+      ],
+      "properties": {
+        "azCliVersion": "2.61.0",
+        "timeout": "PT15M",
+        "retentionInterval": "PT1H",
+        "cleanupPreference": "OnSuccess",
+        "environmentVariables": [
+          { "name": "PACKAGE_URL", "value": "[parameters('packageUrl')]" },
+          { "name": "RG", "value": "[resourceGroup().name]" },
+          { "name": "FUNCTION_APP", "value": "[parameters('functionAppName')]" }
+        ],
+        "scriptContent": "set -e\necho \"Downloading $PACKAGE_URL\"\ncurl -fL --retry 3 --retry-delay 5 -o /tmp/app.zip \"$PACKAGE_URL\"\necho \"Downloaded $(stat -c %s /tmp/app.zip) bytes\"\necho \"Publishing to function app $FUNCTION_APP in resource group $RG\"\naz functionapp deployment source config-zip --resource-group \"$RG\" --name \"$FUNCTION_APP\" --src /tmp/app.zip --build-remote false --timeout 600\necho \"Deployment complete.\"\n"
+      }
     }
   ],
   "outputs": {
@@ -365,7 +426,11 @@
     },
     "deploymentInstructions": {
       "type": "string",
-      "value": "[concat('After the template deploys, publish the code with: func azure functionapp publish ', parameters('functionAppName'))]"
+      "value": "[concat('Code is deployed automatically from ', parameters('packageUrl'), '. To redeploy with a different version, re-run the template with a new packageUrl, or run: func azure functionapp publish ', parameters('functionAppName'))]"
+    },
+    "functionEndpoint": {
+      "type": "string",
+      "value": "[concat('https://', parameters('functionAppName'), '.azurewebsites.net/api/CustomClaimMatching')]"
     }
   }
 }

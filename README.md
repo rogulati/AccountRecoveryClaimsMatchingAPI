@@ -165,37 +165,47 @@ The `claims` object is **dynamic** — you can include any set of key/value pair
 
 ### Deploy to Azure
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Frogulati%2FAccountRecoveryClaimsMatchingAPI%2Fmain%2FARMTemplate%2Ftemplate.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Frogulati%2FAccountRecoveryClaimsMatchingAPI%2Fmain%2FARMTemplate%2Ftemplate.json/createUIDefinitionUri/https%3A%2F%2Fraw.githubusercontent.com%2Frogulati%2FAccountRecoveryClaimsMatchingAPI%2Fmain%2FARMTemplate%2FcreateUiDefinition.json)
 
-You will be prompted for the following parameters:
+> [!IMPORTANT]
+> Before you click **Deploy to Azure**, confirm the following two things — they cause >90% of failed first-time deployments:
+>
+> 1. **You can assign roles in the target resource group.** The template creates RBAC role assignments (Storage Blob Data Owner on storage, Website Contributor on the function app) for two managed identities. **Contributor is not enough** — you need **Owner** or **User Access Administrator** on the resource group. This is the most common enterprise blocker.
+> 2. **The region supports Flex Consumption.** Flex Consumption isn't in every region yet. If you pick an unsupported region, the deployment fails with a runtime-creation error. The portal UI above pre-filters where possible; otherwise check the [current Flex Consumption region list](https://learn.microsoft.com/azure/azure-functions/flex-consumption-how-to#view-currently-supported-regions) before deploying.
+
+#### What the template provisions
+
+The template is a true **one-click deploy** — both infrastructure **and** the function code:
+
+- **Azure Function App** on a **Flex Consumption** plan (FC1), Linux, .NET isolated worker
+  - `alwaysReadyInstances = 1` by default → no cold-start CAE errors
+  - `instanceMemoryMB = 2048` (configurable 512 / 2048 / 4096)
+  - `maximumInstanceCount = 40` (configurable up to 1000)
+- **Storage Account** (StorageV2, shared-key disabled, OAuth-only) with an `app-package` blob container. The Functions host uses it for trigger metadata and as the code deployment source. The function app accesses it with its **system-assigned managed identity** (no connection strings).
+- **Application Insights** for monitoring and logging.
+- **Deployment automation:**
+  - A short-lived **user-assigned managed identity** (`<funcname>-deployer`).
+  - A `Microsoft.Resources/deploymentScripts` resource that downloads the **release zip** (default: this repo's latest GitHub Release) and publishes it to the function app via `az functionapp deployment source config-zip`.
+  - The deployer identity is granted **Website Contributor** scoped to just the function app.
+
+#### Parameters
 
 | Parameter | Description |
 |-----------|-------------|
-| **Function App Name** | Globally unique name for the Function App |
-| **Storage Account Type** | Storage SKU — `Standard_LRS`, `Standard_GRS`, or `Standard_RAGRS` |
-| **Location** | Azure region (defaults to the resource group's location) |
-| **Excel Share URL** | *(optional)* HTTP(S) URL to the Excel file (OneDrive, Azure Blob, etc.) |
-| **Excel Sheet Name** | *(optional)* Worksheet name (defaults to `Sheet1`) |
-| **Excel Cache Minutes** | *(optional)* Minutes to cache parsed Excel data (defaults to `5`) |
-| **Claims Validator Provider** | *(optional)* `excel` (default) or `hrapi` |
-| **HR API Base URL** | *(optional)* Base URL of your HR REST API. Required when using `hrapi` provider |
-| **HR API Auth Mode** | *(optional)* `apikey` or `oauth`. Required when using `hrapi` provider |
-| **HR API API Key** | *(optional, secure)* API key for HR API. Required when auth mode is `apikey` |
-| **HR API OAuth Scope** | *(optional)* OAuth scope for HR API. Required when auth mode is `oauth` |
-| **Entra ID Tenant ID** | *(optional)* Entra ID tenant ID for OAuth Bearer validation. Leave empty to disable |
-| **Entra ID Client ID** | *(optional)* App registration client ID for OAuth. Leave empty to disable |
-| **Repo URL** | *(optional)* GitHub repository URL for source deployment (defaults to this repo) |
-| **Branch** | *(optional)* Branch to deploy (defaults to `main`) |
-| **.NET Version** | *(optional)* `.NET` runtime version — `v10.0` (default) or `v8.0`. Use `v8.0` if .NET 10 is not yet available in your region |
+| **Function App Name** | Globally unique name for the Function App. |
+| **Location** | Azure region. Must be one that supports Flex Consumption. |
+| **Always-Ready Instances** | Pre-warmed instances kept hot 24×7. Default `1` (eliminates cold-start CAE errors). |
+| **Instance Memory** | Per-instance memory: 512 / 2048 / 4096 MB. Default `2048`. |
+| **Maximum Instance Count** | Upper autoscale bound (40–1000). Default `40`. |
+| **.NET Version** | `10.0` (default) or `8.0`. |
+| **Storage Account Type** | `Standard_LRS` / `Standard_GRS` / `Standard_RAGRS`. |
+| **Claims Validator Provider** | `excel` (default, test) or `hrapi` (production). |
+| **Excel Share URL / Sheet Name / Cache Minutes** | *(Excel provider)* URL to the `.xlsx`, worksheet name, in-memory cache TTL. |
+| **HR API Base URL / Auth Mode / API Key / OAuth Scope** | *(HR API provider)* HR REST endpoint and auth. |
+| **Entra Tenant ID / Client ID** | Enables Bearer token validation on the function endpoint. Leave blank during initial testing. |
+| **Package URL** | Public URL to the function-app release zip. Defaults to the latest GitHub Release of this repo. Override to deploy from a fork or pin a specific version. |
 
-The template deploys **both infrastructure and code**:
-- **Azure Function App** (Consumption plan, .NET isolated worker, v4 runtime)
-- **Source control integration** — automatically pulls and builds the function code from the GitHub repository
-- **Storage Account** — Required runtime dependency for Azure Functions on the Consumption plan. The Functions host uses it for trigger management and internal orchestration (`AzureWebJobsStorage`). On Consumption plans, it also hosts an Azure Files share that stores the deployed function code for scale-out (`WEBSITE_CONTENTSHARE`). Your application code does not interact with it directly. The storage account name is derived from the function app name (first 10 alphanumeric characters) plus a unique hash and `sa` suffix (e.g., `acctrecovexi1q2r3s4tsa`), making it easy to identify in the Azure portal.
-- **Application Insights** for monitoring and logging
-- **System-assigned Managed Identity**
-
-> **Note:** If you see a "Runtime version: Error" after deployment, your region may not support .NET 10 on the Consumption plan yet. Redeploy with the **.NET Version** parameter set to `v8.0`.
+> **Note on region availability:** If `.NET 10` is not yet supported on Flex Consumption in your region, redeploy with `dotnetVersion = 8.0`.
 
 ### Post-Deployment
 
@@ -386,11 +396,32 @@ Add these to `local.settings.json` (local) or Function App **Configuration** (Az
 
 ## Cold Start Mitigation
 
-The function app includes a **KeepAlive** timer-triggered function that fires every 4 minutes (`0 */4 * * * *`). This prevents the Consumption plan from deallocating the instance after ~20 minutes of inactivity, effectively eliminating cold starts.
+This Function App runs on **Flex Consumption** with `alwaysReadyInstances = 1` by default. That means at least one worker is pre-warmed 24×7, so:
 
-- **Cost:** ~10,800 executions/month — well within the Consumption plan's free grant of 1 million executions
-- **Benefit:** Also keeps the in-memory Excel data cache warm between real requests
-- **Limitation:** Not 100% guaranteed — Azure can still recycle instances during platform updates, but eliminates >95% of cold starts in practice
+- **JWKS / OIDC discovery is already cached** when the first real CAE call arrives.
+- **`SocketsHttpHandler` HTTP/2 connection pools** are already established to Entra and the HR API.
+- **Excel data** (when using the `excel` provider) is held in the in-process cache.
+
+End-to-end p99 stays comfortably under the ~2s Entra CAE budget. Scale-out instances incur a small additional warm-up, but the always-ready instance absorbs the initial burst.
+
+> The legacy `KeepAlive` timer-triggered function (previously used to mask Consumption-plan cold starts) is redundant on Flex Consumption and can be removed.
+
+## Cutting a release
+
+The ARM template's `packageUrl` parameter defaults to `https://github.com/<owner>/<repo>/releases/latest/download/release.zip`. To publish a new release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The `.github/workflows/release.yml` workflow then:
+
+1. Runs `dotnet publish -c Release` against `account-recovery-claim-matching.csproj`.
+2. Zips the publish output into `release.zip`.
+3. Creates a GitHub Release tagged `v1.0.0` and attaches `release.zip`.
+
+The next "Deploy to Azure" click picks up the new zip automatically (or pin a specific version by overriding `packageUrl` with `…/releases/download/v1.0.0/release.zip`).
 
 ## Technology Stack
 

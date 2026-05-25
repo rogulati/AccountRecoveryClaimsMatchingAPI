@@ -1,0 +1,289 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "config": {
+      "isWizard": true,
+      "basics": {
+        "description": "**Account Recovery Claims Matching API**\n\nDeploys an Azure Function App that handles Microsoft Entra **Custom Authentication Extension** callouts during the Verified ID account-recovery flow.\n\nRuns on **Flex Consumption** with always-ready instances so calls stay under the ~2s Entra budget.\n\n> **Required permissions:** You must have **Owner** or **User Access Administrator** on the target resource group. The template assigns RBAC roles (Storage Blob Data Owner + Website Contributor) to managed identities — Contributor alone is not sufficient.\n\n> **Region availability:** Flex Consumption is not yet available in every region. The region picker below is filtered to currently supported regions. If your preferred region is missing, see https://aka.ms/flex-consumption-regions"
+      }
+    },
+    "basics": [
+      {
+        "name": "functionAppName",
+        "type": "Microsoft.Common.TextBox",
+        "label": "Function App name",
+        "toolTip": "Globally unique name. Will also be used as the public hostname: <name>.azurewebsites.net.",
+        "constraints": {
+          "required": true,
+          "regex": "^[a-z0-9][a-z0-9-]{1,58}[a-z0-9]$",
+          "validationMessage": "2–60 chars, lowercase letters, numbers, and hyphens only. Must start and end with a letter or number."
+        }
+      },
+      {
+        "name": "locationInfo",
+        "type": "Microsoft.Common.InfoBox",
+        "visible": true,
+        "options": {
+          "icon": "Info",
+          "text": "Flex Consumption is currently available in a limited set of regions. The resource group's location is used by default. If your resource group is in an unsupported region, the deployment will fail — re-create the resource group in a supported region first."
+        }
+      }
+    ],
+    "steps": [
+      {
+        "name": "scale",
+        "label": "Scale & runtime",
+        "elements": [
+          {
+            "name": "alwaysReadyInstances",
+            "type": "Microsoft.Common.Slider",
+            "label": "Always-ready instances",
+            "subLabel": "Pre-warmed instances kept hot 24×7",
+            "min": 0,
+            "max": 5,
+            "defaultValue": 1,
+            "showStepMarkers": true,
+            "toolTip": "1 is enough to eliminate cold-start CAE errors for typical CAE workloads. Increase if you expect >10 concurrent CAE calls/sec. Set to 0 to test pure on-demand scaling (cold starts will return).",
+            "constraints": {
+              "required": true
+            }
+          },
+          {
+            "name": "instanceMemoryMB",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Instance memory",
+            "defaultValue": "2048 MB",
+            "toolTip": "Per-instance memory. 2048 is a balanced default for .NET isolated workloads.",
+            "constraints": {
+              "allowedValues": [
+                { "label": "512 MB",  "value": 512  },
+                { "label": "2048 MB", "value": 2048 },
+                { "label": "4096 MB", "value": 4096 }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "maximumInstanceCount",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Maximum scale-out instances",
+            "defaultValue": "40",
+            "toolTip": "Upper bound for autoscaling (40–1000).",
+            "constraints": {
+              "required": true,
+              "regex": "^(4[0-9]|[5-9][0-9]|[1-9][0-9]{2,3}|1000)$",
+              "validationMessage": "Enter a number between 40 and 1000."
+            }
+          },
+          {
+            "name": "dotnetVersion",
+            "type": "Microsoft.Common.DropDown",
+            "label": ".NET version",
+            "defaultValue": "10.0",
+            "toolTip": "Runtime version for the .NET isolated worker.",
+            "constraints": {
+              "allowedValues": [
+                { "label": ".NET 10",        "value": "10.0" },
+                { "label": ".NET 8 (LTS)",   "value": "8.0"  }
+              ],
+              "required": true
+            }
+          }
+        ]
+      },
+      {
+        "name": "claims",
+        "label": "Claims source",
+        "elements": [
+          {
+            "name": "claimsValidatorProvider",
+            "type": "Microsoft.Common.OptionsGroup",
+            "label": "Claims validator provider",
+            "defaultValue": "Excel (test)",
+            "toolTip": "Where the function looks up authoritative claim values.",
+            "constraints": {
+              "allowedValues": [
+                { "label": "Excel (test)", "value": "excel" },
+                { "label": "HR REST API",  "value": "hrapi" }
+              ],
+              "required": true
+            }
+          },
+          {
+            "name": "excelGroup",
+            "type": "Microsoft.Common.Section",
+            "label": "Excel provider settings",
+            "visible": "[equals(steps('claims').claimsValidatorProvider, 'excel')]",
+            "elements": [
+              {
+                "name": "excelShareUrl",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Excel file URL",
+                "toolTip": "Direct HTTP(S) URL to the .xlsx (OneDrive sharing link, Azure Blob SAS, or any web host).",
+                "constraints": { "required": false }
+              },
+              {
+                "name": "excelSheetName",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Worksheet name",
+                "defaultValue": "Sheet1",
+                "constraints": { "required": false }
+              },
+              {
+                "name": "excelCacheMinutes",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Cache duration (minutes)",
+                "defaultValue": "5",
+                "constraints": {
+                  "required": false,
+                  "regex": "^[0-9]+$",
+                  "validationMessage": "Enter a non-negative integer."
+                }
+              }
+            ]
+          },
+          {
+            "name": "hrApiGroup",
+            "type": "Microsoft.Common.Section",
+            "label": "HR API provider settings",
+            "visible": "[equals(steps('claims').claimsValidatorProvider, 'hrapi')]",
+            "elements": [
+              {
+                "name": "hrApiBaseUrl",
+                "type": "Microsoft.Common.TextBox",
+                "label": "HR API base URL",
+                "toolTip": "e.g. https://hr.contoso.com/api",
+                "constraints": {
+                  "required": false,
+                  "regex": "^(|https?://.+)$",
+                  "validationMessage": "Must be a valid http(s) URL."
+                }
+              },
+              {
+                "name": "hrApiAuthMode",
+                "type": "Microsoft.Common.DropDown",
+                "label": "Auth mode",
+                "defaultValue": "API key",
+                "constraints": {
+                  "allowedValues": [
+                    { "label": "API key", "value": "apikey" },
+                    { "label": "OAuth (managed identity)", "value": "oauth" }
+                  ],
+                  "required": false
+                }
+              },
+              {
+                "name": "hrApiApiKey",
+                "type": "Microsoft.Common.PasswordBox",
+                "label": { "password": "API key", "confirmPassword": "Confirm API key" },
+                "options": { "hideConfirmation": true },
+                "visible": "[equals(steps('claims').hrApiGroup.hrApiAuthMode, 'apikey')]",
+                "constraints": { "required": false }
+              },
+              {
+                "name": "hrApiOAuthScope",
+                "type": "Microsoft.Common.TextBox",
+                "label": "OAuth scope",
+                "toolTip": "e.g. api://hr-api-app-id/.default",
+                "visible": "[equals(steps('claims').hrApiGroup.hrApiAuthMode, 'oauth')]",
+                "constraints": { "required": false }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "entra",
+        "label": "Entra ID",
+        "elements": [
+          {
+            "name": "entraInfo",
+            "type": "Microsoft.Common.InfoBox",
+            "visible": true,
+            "options": {
+              "icon": "Info",
+              "text": "These values enable OAuth 2.0 Bearer token validation on the function's HTTP endpoint. Required when the function is registered as an Entra Custom Authentication Extension. Leave blank during initial testing."
+            }
+          },
+          {
+            "name": "entraIdTenantId",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Entra tenant ID",
+            "toolTip": "GUID of the tenant whose CAE calls this function.",
+            "constraints": {
+              "required": false,
+              "regex": "^(|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+              "validationMessage": "Must be a GUID."
+            }
+          },
+          {
+            "name": "entraIdClientId",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Function App client ID",
+            "toolTip": "Application (client) ID of the app registration that fronts this function.",
+            "constraints": {
+              "required": false,
+              "regex": "^(|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+              "validationMessage": "Must be a GUID."
+            }
+          }
+        ]
+      },
+      {
+        "name": "advanced",
+        "label": "Advanced",
+        "elements": [
+          {
+            "name": "packageUrl",
+            "type": "Microsoft.Common.TextBox",
+            "label": "Release package URL",
+            "defaultValue": "https://github.com/rogulati/AccountRecoveryClaimsMatchingAPI/releases/latest/download/release.zip",
+            "toolTip": "Public URL to the function-app zip. Defaults to the latest GitHub Release. Override to deploy a forked build or a pinned version.",
+            "constraints": {
+              "required": true,
+              "regex": "^https?://.+\\.zip$",
+              "validationMessage": "Must be an http(s) URL ending in .zip."
+            }
+          },
+          {
+            "name": "storageAccountType",
+            "type": "Microsoft.Common.DropDown",
+            "label": "Storage redundancy",
+            "defaultValue": "LRS",
+            "toolTip": "Replication SKU for the supporting storage account.",
+            "constraints": {
+              "allowedValues": [
+                { "label": "LRS (locally redundant)", "value": "Standard_LRS" },
+                { "label": "GRS (geo-redundant)",     "value": "Standard_GRS" },
+                { "label": "RA-GRS",                  "value": "Standard_RAGRS" }
+              ],
+              "required": true
+            }
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "functionAppName": "[basics('functionAppName')]",
+      "location": "[location()]",
+      "alwaysReadyInstances": "[int(steps('scale').alwaysReadyInstances)]",
+      "instanceMemoryMB": "[int(steps('scale').instanceMemoryMB)]",
+      "maximumInstanceCount": "[int(steps('scale').maximumInstanceCount)]",
+      "dotnetVersion": "[steps('scale').dotnetVersion]",
+      "claimsValidatorProvider": "[steps('claims').claimsValidatorProvider]",
+      "excelShareUrl": "[coalesce(steps('claims').excelGroup.excelShareUrl, '')]",
+      "excelSheetName": "[coalesce(steps('claims').excelGroup.excelSheetName, 'Sheet1')]",
+      "excelCacheMinutes": "[int(coalesce(steps('claims').excelGroup.excelCacheMinutes, '5'))]",
+      "hrApiBaseUrl": "[coalesce(steps('claims').hrApiGroup.hrApiBaseUrl, '')]",
+      "hrApiAuthMode": "[coalesce(steps('claims').hrApiGroup.hrApiAuthMode, '')]",
+      "hrApiApiKey": "[coalesce(steps('claims').hrApiGroup.hrApiApiKey, '')]",
+      "hrApiOAuthScope": "[coalesce(steps('claims').hrApiGroup.hrApiOAuthScope, '')]",
+      "entraIdTenantId": "[coalesce(steps('entra').entraIdTenantId, '')]",
+      "entraIdClientId": "[coalesce(steps('entra').entraIdClientId, '')]",
+      "packageUrl": "[steps('advanced').packageUrl]",
+      "storageAccountType": "[steps('advanced').storageAccountType]"
+    }
+  }
+}
