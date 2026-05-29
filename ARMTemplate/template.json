@@ -131,14 +131,14 @@
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Entra ID tenant ID for OAuth 2.0 Bearer token validation. Leave empty to disable."
+        "description": "Optional. EasyAuth is recommended; EntraId__* is an optional second path for environments without EasyAuth. Entra ID tenant ID for in-code OAuth 2.0 Bearer token validation. Leave empty when EasyAuth is configured."
       }
     },
     "entraIdClientId": {
       "type": "string",
       "defaultValue": "",
       "metadata": {
-        "description": "Entra ID application (client) ID of the Function App's app registration for OAuth 2.0. Leave empty to disable."
+        "description": "Optional. EasyAuth is recommended; EntraId__* is an optional second path for environments without EasyAuth. Entra ID application (client) ID of the Function App's app registration for in-code OAuth 2.0 Bearer token validation. Leave empty when EasyAuth is configured."
       }
     },
     "dotnetVersion": {

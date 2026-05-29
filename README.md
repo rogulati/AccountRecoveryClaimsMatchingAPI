@@ -202,7 +202,7 @@ The template is a true **one-click deploy** — both infrastructure **and** the 
 | **Claims Validator Provider** | `excel` (default, test) or `hrapi` (production). |
 | **Excel Share URL / Sheet Name / Cache Minutes** | *(Excel provider)* URL to the `.xlsx`, worksheet name, in-memory cache TTL. |
 | **HR API Base URL / Auth Mode / API Key / OAuth Scope** | *(HR API provider)* HR REST endpoint and auth. |
-| **Entra Tenant ID / Client ID** | Enables Bearer token validation on the function endpoint. Leave blank during initial testing. |
+| **Entra Tenant ID / Client ID** *(optional)* | EasyAuth is recommended; `EntraId__*` is an optional second path for environments without EasyAuth. Enables in-code Bearer token validation on the function endpoint. Leave blank when EasyAuth is configured. |
 | **Package URL** | Public URL to the function-app release zip. Defaults to the latest GitHub Release of this repo. Override to deploy from a fork or pin a specific version. |
 
 > **Note on region availability:** If `.NET 10` is not yet supported on Flex Consumption in your region, redeploy with `dotnetVersion = 8.0`.

@@ -196,7 +196,7 @@
       },
       {
         "name": "entra",
-        "label": "Entra ID",
+        "label": "Entra ID (optional)",
         "elements": [
           {
             "name": "entraInfo",
@@ -204,14 +204,14 @@
             "visible": true,
             "options": {
               "icon": "Info",
-              "text": "These values enable OAuth 2.0 Bearer token validation on the function's HTTP endpoint. Required when the function is registered as an Entra Custom Authentication Extension. Leave blank during initial testing."
+              "text": "Optional. EasyAuth is recommended; EntraId__* is an optional second path for environments without EasyAuth. These values enable in-code OAuth 2.0 Bearer token validation on the function's HTTP endpoint. Leave blank when EasyAuth is configured on the Function App."
             }
           },
           {
             "name": "entraIdTenantId",
             "type": "Microsoft.Common.TextBox",
-            "label": "Entra tenant ID",
-            "toolTip": "GUID of the tenant whose CAE calls this function.",
+            "label": "Entra tenant ID (optional)",
+            "toolTip": "Optional. GUID of the tenant whose CAE calls this function. Leave blank when EasyAuth is configured.",
             "constraints": {
               "required": false,
               "regex": "^(|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
@@ -221,8 +221,8 @@
           {
             "name": "entraIdClientId",
             "type": "Microsoft.Common.TextBox",
-            "label": "Function App client ID",
-            "toolTip": "Application (client) ID of the app registration that fronts this function.",
+            "label": "Function App client ID (optional)",
+            "toolTip": "Optional. Application (client) ID of the app registration that fronts this function. Leave blank when EasyAuth is configured.",
             "constraints": {
               "required": false,
               "regex": "^(|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
