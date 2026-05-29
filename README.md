@@ -216,24 +216,30 @@ https://<your-function-app-name>.azurewebsites.net/api/CustomClaimMatching
 
 ### Authentication
 
-The function uses `AuthorizationLevel.Anonymous` — **no function keys are required**. All authentication is via OAuth 2.0 Bearer tokens validated by `TokenValidationService`.
+The function uses `AuthorizationLevel.Anonymous` — **no function keys are required**.
+Authentication is enforced at the platform layer by **App Service EasyAuth**, configured
+per Step 5 of the [tutorial](https://learn.microsoft.com/en-us/entra/identity-platform/tutorial-custom-authentication-extension-account-recovery).
 
-#### OAuth 2.0 Client Credentials Flow (Entra Custom Auth Extension)
+#### How Entra calls the function
 
-When the function is registered as an **Entra ID custom authentication extension**, Entra calls it using the OAuth 2.0 client credentials flow:
+Entra invokes the function using the OAuth 2.0 client credentials flow:
 
-1. Entra acquires a token from `https://login.microsoftonline.com/{tenantId}/v2.0` with the Function App's app registration as the audience
-2. Entra sends the token in the `Authorization: Bearer <token>` header
-3. The function validates the JWT — checking issuer, audience, signature, and expiration via OIDC discovery
+1. Entra acquires a token from `https://login.microsoftonline.com/{tenantId}/v2.0` with the Function App's app registration as the audience.
+2. Entra sends the token in the `Authorization: Bearer <token>` header.
+3. EasyAuth validates the JWT — issuer, audience, signature, expiration, and the allowed client app ID (`99045fe1-7639-4a75-9d4a-577b6ca3810f`).
+4. The function then logs the decoded claims (`aud`, `iss`, `azp`, `tid`, `exp`) for diagnostics — never the raw token.
 
-**Required App Settings** (enable Bearer token validation):
+#### Alternative: in-code token validation
+
+If you can't use EasyAuth (for example, hosting outside Azure App Service), set these app settings and `TokenValidationService` will validate the JWT inside the function instead:
 
 | Setting | Description |
 |---------|-------------|
 | `EntraId__TenantId` | Your Entra ID tenant ID (GUID) |
 | `EntraId__ClientId` | Application (client) ID of the Function App's app registration |
+| `EntraId__AuthorizedClientAppIds` | Optional `;`-separated list of allowed `azp` values. Default: `99045fe1-7639-4a75-9d4a-577b6ca3810f` |
 
-> **Note:** The `EntraId__TenantId` and `EntraId__ClientId` app settings are no longer used. Authentication is handled entirely by EasyAuth. Keep these empty or remove them from your Function App's environment variables.
+Leave them empty when EasyAuth is in place.
 
 #### Verifying Authentication
 

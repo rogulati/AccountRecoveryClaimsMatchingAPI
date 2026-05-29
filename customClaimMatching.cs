@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
@@ -36,7 +37,7 @@ public class CustomClaimMatching
         }
 
         var token = authHeader.Substring("Bearer ".Length).Trim();
-        _logger.LogInformation("Bearer token: {Token}", token);
+        LogTokenClaims(token);
         var (isValid, errorMessage) = await _tokenValidator.ValidateTokenAsync(token);
         if (!isValid)
         {
@@ -85,6 +86,25 @@ public class CustomClaimMatching
         var response = new VerifiedIdClaimValidationResponse(validationResult, failedClaims);
 
         return new OkObjectResult(response);
+    }
+
+    private void LogTokenClaims(string token)
+    {
+        try
+        {
+            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+            _logger.LogInformation(
+                "Token claims: aud={Aud} iss={Iss} azp={Azp} tid={Tid} exp={Exp}",
+                jwt.Audiences.FirstOrDefault(),
+                jwt.Issuer,
+                jwt.Claims.FirstOrDefault(c => c.Type == "azp")?.Value,
+                jwt.Claims.FirstOrDefault(c => c.Type == "tid")?.Value,
+                jwt.ValidTo);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Bearer value is not a parseable JWT (len={Len}).", token.Length);
+        }
     }
 }
 
